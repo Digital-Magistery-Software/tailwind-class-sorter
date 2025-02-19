@@ -1,0 +1,107 @@
+{
+  "name": "digital-magistery-tailwind-class-sorter",
+  "author": "Digital Magistery Software",
+  "publisher": "digital-magistery-software",
+  "license": "MIT",
+  "displayName": "Digital Magistery Tailwind Class Sorter",
+  "description": "Sort Tailwind CSS classes on save",
+  "version": "1.0.0",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Digital-Magistery-Software/tailwind-class-sorter"
+  },
+  "bugs": {
+    "url": "https://github.com/Digital-Magistery-Software/tailwind-class-sorter/issues"
+  },
+  "homepage": "https://github.com/Digital-Magistery-Software/tailwind-class-sorter#readme",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Formatters",
+    "Other"
+  ],
+  "keywords": [
+    "tailwind",
+    "css",
+    "formatter",
+    "sorter",
+    "class sorter"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "preview": false,
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "tailwindSorter.showOutput",
+        "title": "Show Tailwind Sorter Output"
+      },
+      {
+        "command": "tailwindSorter.testFormatter",
+        "title": "Test Tailwind Sorter Formatter"
+      }
+    ],
+    "configuration": {
+      "title": "Tailwind Class Sorter",
+      "properties": {
+        "tailwindSorter.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable Tailwind class sorting"
+        },
+        "tailwindSorter.includeFiles": {
+          "type": "array",
+          "default": [
+            "**/*.{js,jsx,ts,tsx,html}"
+          ],
+          "description": "Files to include for class sorting"
+        },
+        "tailwindSorter.languageIds": {
+          "type": "array",
+          "default": [
+            "typescript",
+            "typescriptreact",
+            "javascript",
+            "javascriptreact",
+            "html"
+          ],
+          "description": "Language IDs for which this extension should be active"
+        },
+        "tailwindSorter.customBinaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to RustyWind binary. Supports workspace variables like ${workspaceFolder}. If not set, will look for local installation in node_modules, then global installation."
+        },
+        "tailwindSorter.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging in the output channel"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "yarn run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "yarn run compile",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.13.4",
+    "@types/vscode": "^1.80.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "minimatch": "^10.0.1"
+  },
+  "packageManager": "yarn@4.6.0+sha512.5383cc12567a95f1d668fbe762dfe0075c595b4bfff433be478dbbe24e05251a8e8c3eb992a986667c1d53b6c3a9c85b8398c35a960587fbd9fa3a0915406728"
+}

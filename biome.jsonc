@@ -1,0 +1,112 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "organizeImports": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        "noLabelWithoutControl": "warn",
+        "useFocusableInteractive": "warn",
+        "useSemanticElements": "warn",
+        "useGenericFontNames": "warn"
+      },
+      "complexity": {
+        "useSimplifiedLogicExpression": "warn",
+        "noUselessStringConcat": "warn",
+        "noUselessUndefinedInitialization": "warn"
+      },
+      "correctness": {
+        "noUndeclaredVariables": "warn",
+        "noUnusedImports": "warn",
+        "noUnusedVariables": "warn",
+        "useHookAtTopLevel": "error",
+        "useArrayLiterals": "warn",
+        "noConstantMathMinMaxClamp": "warn",
+        "noUnusedFunctionParameters": "warn",
+        "noInvalidPositionAtImportRule": "warn",
+        "noUnknownFunction": "warn",
+        "noUnknownMediaFeatureName": "warn",
+        "noUnknownProperty": "warn",
+        "noUnknownUnit": "warn",
+        "noUnmatchableAnbSelector": "warn"
+      },
+      "style": {
+        "noDefaultExport": "warn",
+        "noImplicitBoolean": "error",
+        "noNegationElse": "warn",
+        "noShoutyConstants": "warn",
+        "useBlockStatements": "error",
+        "useCollapsedElseIf": "warn",
+        "useFilenamingConvention": "warn",
+        "useForOf": "warn",
+        "useFragmentSyntax": "error",
+        "useNamingConvention": "warn",
+        "useShorthandArrayType": "warn",
+        "useShorthandAssign": "warn",
+        "useSingleCaseStatement": "warn",
+        "noYodaExpression": "warn",
+        "useConsistentBuiltinInstantiation": "warn",
+        "useDefaultSwitchClause": "warn",
+        "useThrowNewError": "warn"
+      },
+      "suspicious": {
+        "noEmptyBlockStatements": "warn",
+        "useAwait": "warn",
+        "useErrorMessage": "warn",
+        "noDuplicateAtImportRules": "warn",
+        "noDuplicateFontNames": "warn",
+        "noDuplicateSelectorsKeyframeBlock": "warn",
+        "noEmptyBlock": "warn"
+      },
+      "nursery": {
+        "noDuplicateElseIf": "warn",
+        "noSubstr": "warn"
+      }
+    }
+  },
+  "javascript": {
+    "globals": [
+      "suite",
+      "test",
+      "suiteSetup",
+      "teardown",
+      "suiteTeardown"
+    ]
+  },
+  "overrides": [
+    {
+      "include": [
+        ".vscode-test.mjs"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    }
+  ],
+  "formatter": {
+    "lineWidth": 160
+  },
+  "json": {
+    "parser": {
+      "allowComments": true
+    }
+  },
+  "css": {
+    "formatter": {
+      "enabled": true
+    },
+    "linter": {
+      "enabled": true
+    },
+    "parser": {
+      "cssModules": true
+    }
+  }
+}
