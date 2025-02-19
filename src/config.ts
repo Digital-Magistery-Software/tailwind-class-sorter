@@ -9,5 +9,6 @@ export function getConfig(): TailwindSorterConfig {
     languageIds: config.get("languageIds", ["typescript", "typescriptreact", "javascript", "javascriptreact", "html"]),
     customBinaryPath: config.get("customBinaryPath", ""),
     debug: config.get("debug", false),
+    tailwindFunctions: config.get("tailwindFunctions", ["cn", "cva", "clsx"]),
   };
 }

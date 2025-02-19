@@ -80,6 +80,15 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging in the output channel"
+        },
+        "tailwindSorter.tailwindFunctions": {
+          "type": "array",
+          "default": [
+            "cn",
+            "cva",
+            "clsx"
+          ],
+          "description": "List of function names that contain Tailwind classes as arguments"
         }
       }
     }

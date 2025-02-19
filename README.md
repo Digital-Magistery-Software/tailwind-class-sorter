@@ -13,6 +13,25 @@ A VS Code extension that automatically sorts Tailwind CSS classes using [RustyWi
 - Test command to check if sorting would occur
 - Configurable file and language support
 
+## Tailwind Function Support
+
+The extension can detect and sort Tailwind classes within specified function calls. By default, it supports:
+
+- `cn` (for class-variance-authority + tailwind-merge pattern)
+- `cva` (class-variance-authority)
+- `clsx`
+
+You can add your own function names through the `tailwindSorter.tailwindFunctions` setting.
+
+Example usage with the `cn` function:
+
+````tsx
+className={cn(
+  "flex items-center text-nowrap",
+  isActive && "font-bold",
+  isPending && "pointer-events-none"
+)}
+
 ## Requirements
 
 🚨 **RustyWind is required but NOT included in this extension.** This extension uses [RustyWind](https://github.com/avencera/rustywind) to sort Tailwind CSS classes. You must install it separately.
@@ -21,7 +40,7 @@ A VS Code extension that automatically sorts Tailwind CSS classes using [RustyWi
 
 ```sh
 yarn add rustywind --dev
-```
+````
 
 ### **Install RustyWind globally (For older Yarn versions)**
 
@@ -66,6 +85,12 @@ This extension contributes the following settings:
   "type": "boolean",
   "default": false,
   "description": "Enable debug logging in the output channel"
+}
+
+"tailwindSorter.tailwindFunctions": {
+  "type": "array",
+  "default": ["cn", "cva", "clsx"],
+  "description": "List of function names that contain Tailwind classes as arguments"
 }
 ```
 

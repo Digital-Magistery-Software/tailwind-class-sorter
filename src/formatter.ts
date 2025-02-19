@@ -31,9 +31,33 @@ export class TailwindSorterFormatter implements vscode.Disposable {
   }
 
   private hasTailwindClasses(text: string): boolean {
-    const classMatch = /class(?:Name|List)?=["'`]([^"'`]*?)["'`]/g.test(text);
-    this.logger.debugLog(`Tailwind classes ${classMatch ? "found" : "not found"} in text`);
-    return classMatch;
+    const classAttributeMatch = /class(?:Name|List)?=["'`]([^"'`]*?)["'`]/g.test(text);
+
+    if (classAttributeMatch) {
+      return true;
+    }
+
+    const functionPattern = new RegExp(`(?:${this.config.tailwindFunctions.join("|")})\\s*\\((?:[^)(]*|\\([^)(]*\\))*\\)`, "g");
+
+    // First test if we have any matching functions
+    const functionMatch = functionPattern.test(text);
+    console.log("functionMatch", functionMatch);
+
+    if (functionMatch) {
+      // If we found a function, look for string literals containing classes within it
+      const stringPattern = /["'`]([^"'`]+)["'`]/g;
+      const matches = text.match(functionPattern) || [];
+
+      // Check each function call for string literals
+      const hasClassStrings = matches.some((match) => stringPattern.test(match));
+
+      this.logger.debugLog(`Tailwind function found with${hasClassStrings ? "" : "out"} class strings`);
+
+      return hasClassStrings;
+    }
+
+    this.logger.debugLog("No Tailwind classes found in text");
+    return false;
   }
 
   private isFileIncluded(fileName: string): boolean {
@@ -92,7 +116,7 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
     let wouldFormat = false;
     if (fileSupported && hasTailwindClasses && this.rustywindPath) {
-      wouldFormat = await this.rustywindManager.wouldFormatChange(document, this.rustywindPath);
+      wouldFormat = await this.rustywindManager.wouldFormatChange(document, this.rustywindPath, this.config.tailwindFunctions);
     }
 
     return {
@@ -126,7 +150,7 @@ export class TailwindSorterFormatter implements vscode.Disposable {
     }
 
     try {
-      const formatted = await this.rustywindManager.sortClasses(text, this.rustywindPath);
+      const formatted = await this.rustywindManager.sortClasses(text, this.rustywindPath, this.config.tailwindFunctions);
       if (formatted.trim() === text.trim()) {
         this.logger.debugLog("No changes needed - classes already sorted");
         return;

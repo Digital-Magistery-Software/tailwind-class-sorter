@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { extractClasses } from "./utils/classExtractor";
 import type { Logger } from "./utils/logging";
-import { withTempFile } from "./utils/temp";
 import type { ExecFunction, TailwindSorterConfig } from "./utils/types";
 
 export async function findGlobalBinary(binaryName: string): Promise<string | null> {
@@ -97,37 +97,56 @@ export class RustywindManager {
     }
   }
 
-  async sortClasses(text: string, rustywindPath: string): Promise<string> {
-    return await withTempFile(
-      text,
-      async (tmpFilePath) => {
-        const { stdout, stderr } = await this.execCommand(`"${rustywindPath}" --stdin < "${tmpFilePath}"`);
+  async sortClasses(text: string, rustywindPath: string, tailwindFunctions: string[]): Promise<string> {
+    const classMatches = extractClasses(text, tailwindFunctions);
+    let formattedText = text;
+
+    for (const { original, classString } of classMatches) {
+      try {
+        // Wrap the class string in a className attribute
+        const wrappedClasses = `<div className="${classString}"></div>`;
+        const { stdout, stderr } = await this.execCommand(`echo "${wrappedClasses}" | "${rustywindPath}" --stdin`);
 
         if (stderr) {
-          throw new Error(stderr);
+          this.logger.debugLog(`Warning while sorting classes: ${stderr}`);
+          continue;
         }
 
-        return stdout.trim() || text;
-      },
-      undefined,
-      this.logger
-    );
+        // Extract the sorted classes from the response
+        const match = stdout.match(/className=["'`]([^"'`]+)["'`]/);
+        if (!match) {
+          this.logger.debugLog("Could not extract sorted classes from RustyWind output");
+          continue;
+        }
+
+        const sortedClasses = match[1].trim();
+        if (sortedClasses && sortedClasses !== classString) {
+          formattedText = formattedText.replace(original, original.replace(classString, sortedClasses));
+        }
+      } catch (error) {
+        this.logger.debugLog(`Error sorting classes: ${error}`);
+      }
+    }
+
+    return formattedText;
   }
 
-  async wouldFormatChange(document: vscode.TextDocument, rustywindPath: string): Promise<boolean> {
-    return await withTempFile(
-      document.getText(),
-      async (tmpFilePath) => {
-        const { stdout, stderr } = await this.execCommand(`"${rustywindPath}" --dry-run --stdin < "${tmpFilePath}"`);
+  async wouldFormatChange(document: vscode.TextDocument, rustywindPath: string, tailwindFunctions: string[]): Promise<boolean> {
+    const text = document.getText();
+    const classMatches = extractClasses(text, tailwindFunctions);
 
-        if (stderr) {
-          throw new Error(stderr);
+    for (const { classString } of classMatches) {
+      try {
+        const wrappedClasses = `<div className="${classString}"></div>`;
+        const { stdout } = await this.execCommand(`echo "${wrappedClasses}" | "${rustywindPath}" --stdin --dry-run`);
+        if (stdout.trim()) {
+          return true;
         }
+      } catch (error) {
+        this.logger.debugLog(`Error checking classes: ${error}`);
+      }
+    }
 
-        return stdout.trim().length > 0;
-      },
-      undefined,
-      this.logger
-    );
+    return false;
   }
 }

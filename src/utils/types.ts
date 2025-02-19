@@ -6,6 +6,7 @@ export interface TailwindSorterConfig {
   languageIds: string[];
   customBinaryPath?: string;
   debug: boolean;
+  tailwindFunctions: string[];
 }
 
 export interface TempFileOptions {
