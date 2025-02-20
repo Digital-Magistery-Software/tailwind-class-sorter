@@ -41,7 +41,6 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
     // First test if we have any matching functions
     const functionMatch = functionPattern.test(text);
-    console.log("functionMatch", functionMatch);
 
     if (functionMatch) {
       // If we found a function, look for string literals containing classes within it
