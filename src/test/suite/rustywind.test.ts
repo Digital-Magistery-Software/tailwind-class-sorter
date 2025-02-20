@@ -26,6 +26,7 @@ suite("RustywindManager", function () {
       languageIds: [],
       customBinaryPath: "/custom/path/to/rustywind",
       debug: false,
+      tailwindFunctions: [],
     };
 
     const result = await manager.findRustywindPath(config);
@@ -41,6 +42,7 @@ suite("RustywindManager", function () {
       includeFiles: [],
       languageIds: [],
       debug: false,
+      tailwindFunctions: [],
     };
 
     // Create a document in a directory that doesn't exist
@@ -55,20 +57,20 @@ suite("RustywindManager", function () {
   });
 
   test("sortClasses successfully sorts classes", async () => {
-    const result = await manager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "/mock/path/rustywind");
+    const result = await manager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "/mock/path/rustywind", []);
     assert.ok(result.includes("flex") && result.includes("p-4") && result.includes("mt-2"));
   });
 
   test("wouldFormatChange detects needed changes", async () => {
     const document = await createTempDocument("test.tsx", '<div className="mt-2 p-4 flex">Test</div>');
-    const result = await manager.wouldFormatChange(document, "/mock/path/rustywind");
+    const result = await manager.wouldFormatChange(document, "/mock/path/rustywind", []);
     assert.strictEqual(result, true);
   });
 
   test("handles rustywind errors gracefully", async () => {
     const errorManager = new RustywindManager(logger, mockExecFail, mockFindBinarySuccess);
     await assert.rejects(
-      () => errorManager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "/mock/path/rustywind"),
+      () => errorManager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "/mock/path/rustywind", []),
       /Error: Something went wrong/
     );
   });
