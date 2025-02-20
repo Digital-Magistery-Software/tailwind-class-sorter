@@ -25,12 +25,13 @@ You can add your own function names through the `tailwindSorter.tailwindFunction
 
 Example usage with the `cn` function:
 
-````tsx
+```tsx
 className={cn(
   "flex items-center text-nowrap",
   isActive && "font-bold",
   isPending && "pointer-events-none"
 )}
+```
 
 ## Requirements
 
@@ -40,7 +41,7 @@ className={cn(
 
 ```sh
 yarn add rustywind --dev
-````
+```
 
 ### **Install RustyWind globally (For older Yarn versions)**
 
