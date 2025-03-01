@@ -83,12 +83,6 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    if (!diagnostics.hasTailwindClasses) {
-      logger.debugLog("❌ No Tailwind classes found");
-      vscode.window.showInformationMessage("No Tailwind classes found in file");
-      return;
-    }
-
     if (!diagnostics.rustywindPath) {
       logger.debugLog("❌ Rustywind binary not found");
       vscode.window.showErrorMessage("Rustywind binary not found. Please install rustywind.");

@@ -57,7 +57,7 @@ suite("RustywindManager", function () {
   });
 
   test("sortClasses successfully sorts classes", async () => {
-    const result = await manager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "/mock/path/rustywind", []);
+    const result = await manager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "test.tsx", "/mock/path/rustywind", []);
     assert.ok(result.includes("flex") && result.includes("p-4") && result.includes("mt-2"));
   });
 
@@ -70,7 +70,7 @@ suite("RustywindManager", function () {
   test("handles rustywind errors gracefully", async () => {
     const errorManager = new RustywindManager(logger, mockExecFail, mockFindBinarySuccess);
     await assert.rejects(
-      () => errorManager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "/mock/path/rustywind", []),
+      () => errorManager.sortClasses('<div className="mt-2 p-4 flex">Test</div>', "test.tsx", "/mock/path/rustywind", []),
       /Error: Something went wrong/
     );
   });

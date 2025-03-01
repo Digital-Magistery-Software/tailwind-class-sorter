@@ -17,7 +17,6 @@ export interface TempFileOptions {
 
 export interface DiagnosticResult {
   fileSupported: boolean;
-  hasTailwindClasses: boolean;
   rustywindPath: string | null;
   wouldFormat: boolean;
 }

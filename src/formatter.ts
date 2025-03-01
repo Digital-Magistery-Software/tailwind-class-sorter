@@ -30,35 +30,6 @@ export class TailwindSorterFormatter implements vscode.Disposable {
     this.logger.showOutput();
   }
 
-  private hasTailwindClasses(text: string): boolean {
-    const classAttributeMatch = /class(?:Name|List)?=["'`]([^"'`]*?)["'`]/g.test(text);
-
-    if (classAttributeMatch) {
-      return true;
-    }
-
-    const functionPattern = new RegExp(`(?:${this.config.tailwindFunctions.join("|")})\\s*\\((?:[^)(]*|\\([^)(]*\\))*\\)`, "g");
-
-    // First test if we have any matching functions
-    const functionMatch = functionPattern.test(text);
-
-    if (functionMatch) {
-      // If we found a function, look for string literals containing classes within it
-      const stringPattern = /["'`]([^"'`]+)["'`]/g;
-      const matches = text.match(functionPattern) || [];
-
-      // Check each function call for string literals
-      const hasClassStrings = matches.some((match) => stringPattern.test(match));
-
-      this.logger.debugLog(`Tailwind function found with${hasClassStrings ? "" : "out"} class strings`);
-
-      return hasClassStrings;
-    }
-
-    this.logger.debugLog("No Tailwind classes found in text");
-    return false;
-  }
-
   private isFileIncluded(fileName: string): boolean {
     return this.config.includeFiles.some((pattern) => minimatch(fileName, pattern));
   }
@@ -111,16 +82,14 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
   public async diagnose(document: vscode.TextDocument): Promise<DiagnosticResult> {
     const fileSupported = this.shouldFormatDocument(document);
-    const hasTailwindClasses = this.hasTailwindClasses(document.getText());
 
     let wouldFormat = false;
-    if (fileSupported && hasTailwindClasses && this.rustywindPath) {
+    if (fileSupported && this.rustywindPath) {
       wouldFormat = await this.rustywindManager.wouldFormatChange(document, this.rustywindPath, this.config.tailwindFunctions);
     }
 
     return {
       fileSupported,
-      hasTailwindClasses,
       rustywindPath: this.rustywindPath,
       wouldFormat,
     };
@@ -143,13 +112,9 @@ export class TailwindSorterFormatter implements vscode.Disposable {
     }
 
     const text = document.getText();
-    if (!this.hasTailwindClasses(text)) {
-      this.logger.debugLog("No Tailwind classes found in file");
-      return;
-    }
 
     try {
-      const formatted = await this.rustywindManager.sortClasses(text, this.rustywindPath, this.config.tailwindFunctions);
+      const formatted = await this.rustywindManager.sortClasses(text, fileName, this.rustywindPath, this.config.tailwindFunctions);
       if (formatted.trim() === text.trim()) {
         this.logger.debugLog("No changes needed - classes already sorted");
         return;

@@ -179,6 +179,69 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@oxc-parser/binding-darwin-arm64@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-darwin-arm64@npm:0.52.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@oxc-parser/binding-darwin-x64@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-darwin-x64@npm:0.52.0"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@oxc-parser/binding-linux-arm64-gnu@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-linux-arm64-gnu@npm:0.52.0"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@oxc-parser/binding-linux-arm64-musl@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-linux-arm64-musl@npm:0.52.0"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@oxc-parser/binding-linux-x64-gnu@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-linux-x64-gnu@npm:0.52.0"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@oxc-parser/binding-linux-x64-musl@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-linux-x64-musl@npm:0.52.0"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@oxc-parser/binding-win32-arm64-msvc@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-win32-arm64-msvc@npm:0.52.0"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@oxc-parser/binding-win32-x64-msvc@npm:0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-parser/binding-win32-x64-msvc@npm:0.52.0"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@oxc-project/types@npm:^0.52.0":
+  version: 0.52.0
+  resolution: "@oxc-project/types@npm:0.52.0"
+  checksum: 10c0/4abac5b4bb504a2038be539e106c6caa72ee6eefae0994458a39de4da2d901bf83ab7fcedb21282f281dfc302851c3e528b11daddbe6545836a35f5390e757d0
+  languageName: node
+  linkType: hard
+
 "@pkgjs/parseargs@npm:^0.11.0":
   version: 0.11.0
   resolution: "@pkgjs/parseargs@npm:0.11.0"
@@ -607,6 +670,7 @@ __metadata:
     "@vscode/test-cli": "npm:^0.0.10"
     "@vscode/test-electron": "npm:^2.4.1"
     minimatch: "npm:^10.0.1"
+    oxc-parser: "npm:^0.52.0"
     typescript: "npm:^5.7.3"
   languageName: unknown
   linkType: soft
@@ -1415,6 +1479,40 @@ __metadata:
     string-width: "npm:^6.1.0"
     strip-ansi: "npm:^7.1.0"
   checksum: 10c0/9412cd96436b94738f9d11a00dba3654d3cb6d91dfbcca71554fbcb76dc897145fa4ba0d2009e492256a21228ab565512e5e93a36a205ccd38f9e99a417358cb
+  languageName: node
+  linkType: hard
+
+"oxc-parser@npm:^0.52.0":
+  version: 0.52.0
+  resolution: "oxc-parser@npm:0.52.0"
+  dependencies:
+    "@oxc-parser/binding-darwin-arm64": "npm:0.52.0"
+    "@oxc-parser/binding-darwin-x64": "npm:0.52.0"
+    "@oxc-parser/binding-linux-arm64-gnu": "npm:0.52.0"
+    "@oxc-parser/binding-linux-arm64-musl": "npm:0.52.0"
+    "@oxc-parser/binding-linux-x64-gnu": "npm:0.52.0"
+    "@oxc-parser/binding-linux-x64-musl": "npm:0.52.0"
+    "@oxc-parser/binding-win32-arm64-msvc": "npm:0.52.0"
+    "@oxc-parser/binding-win32-x64-msvc": "npm:0.52.0"
+    "@oxc-project/types": "npm:^0.52.0"
+  dependenciesMeta:
+    "@oxc-parser/binding-darwin-arm64":
+      optional: true
+    "@oxc-parser/binding-darwin-x64":
+      optional: true
+    "@oxc-parser/binding-linux-arm64-gnu":
+      optional: true
+    "@oxc-parser/binding-linux-arm64-musl":
+      optional: true
+    "@oxc-parser/binding-linux-x64-gnu":
+      optional: true
+    "@oxc-parser/binding-linux-x64-musl":
+      optional: true
+    "@oxc-parser/binding-win32-arm64-msvc":
+      optional: true
+    "@oxc-parser/binding-win32-x64-msvc":
+      optional: true
+  checksum: 10c0/3d097f9e60190609906de4fd39817c71befa7ef551c24d6468fcc6c958126eef799f2454077050b045cc9651d489c7f0044a166ff70b1f854d9c7ea4acc2f7ec
   languageName: node
   linkType: hard
 

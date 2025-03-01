@@ -39,23 +39,6 @@ suite("TailwindSorterFormatter", function () {
     });
   });
 
-  suite("Class Detection", () => {
-    test("Should detect className attribute", async () => {
-      const diagnostics = await formatter.diagnose(await createTempDocument("test.tsx", '<div className="p-4 mt-2">Test</div>'));
-      assert.strictEqual(diagnostics.hasTailwindClasses, true);
-    });
-
-    test("Should detect class attribute", async () => {
-      const diagnostics = await formatter.diagnose(await createTempDocument("test.html", '<div class="flex items-center">Test</div>'));
-      assert.strictEqual(diagnostics.hasTailwindClasses, true);
-    });
-
-    test("Should reject documents without classes", async () => {
-      const diagnostics = await formatter.diagnose(await createTempDocument("test.tsx", "<div>Test</div>"));
-      assert.strictEqual(diagnostics.hasTailwindClasses, false);
-    });
-  });
-
   suite("Formatting", () => {
     test("Should format document when conditions are met", async () => {
       await formatter.initialize();
