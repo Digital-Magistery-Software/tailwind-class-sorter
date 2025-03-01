@@ -17,3 +17,19 @@
 
 - Support for Tailwind classes within function calls (cn, cva, clsx)
 - Configurable list of function names via `tailwindFunctions` setting
+
+## [1.2.0] - 2025-03-01
+
+### Added
+
+- AST-based Tailwind class extraction using Oxc parser
+- Support for complex class usage patterns:
+  - Template literals
+  - Function calls with multiple arguments
+  - Conditional expressions
+  - Object properties
+- Proper handling of Tailwind v4 custom property syntax
+
+### Changed
+
+- Replaced regex-based extraction with more accurate AST parsing

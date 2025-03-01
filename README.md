@@ -33,6 +33,19 @@ className={cn(
 )}
 ```
 
+## Enhanced Class Detection
+
+Version 1.2.0 introduces AST-based class detection for more reliable and comprehensive Tailwind class sorting.
+The extension now properly handles:
+
+- Template literals: `` className={`px-4 ${condition ? "pt-2" : "pb-2"}`} ``
+- Function calls with multiple arguments: `className={cn("px-4", condition && "pt-2")}`
+- Conditional expressions: `className={condition ? "px-4" : "py-2"}`
+- Object expressions: `className={cn({ "px-4": isActive })}`
+- Tailwind v4 custom property syntax: `border-(--custom-color)`
+
+This provides much more reliable sorting across complex component structures.
+
 ## Requirements
 
 🚨 **RustyWind is required but NOT included in this extension.** This extension uses [RustyWind](https://github.com/avencera/rustywind) to sort Tailwind CSS classes. You must install it separately.
