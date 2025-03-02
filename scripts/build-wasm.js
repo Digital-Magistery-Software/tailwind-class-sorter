@@ -19,7 +19,12 @@ if (fs.existsSync(outDir)) {
 fs.mkdirSync(outDir, { recursive: true });
 
 // Move necessary files
-const filesToMove = ["wasm_bg.wasm", "wasm.js", "wasm_bg.wasm.d.ts", "wasm.d.ts"];
+const filesToMove = [
+  "digital_magistery_tailwind_sorter_bg.wasm",
+  "digital_magistery_tailwind_sorter.js",
+  "digital_magistery_tailwind_sorter_bg.wasm.d.ts",
+  "digital_magistery_tailwind_sorter.d.ts",
+];
 for (const file of filesToMove) {
   const src = path.join(pkgDir, file);
   const dest = path.join(outDir, file);

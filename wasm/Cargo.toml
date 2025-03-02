@@ -1,5 +1,5 @@
 [package]
-name = "wasm"
+name = "digital-magistery-tailwind-sorter"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,5 +7,15 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-oxc = "0.53.0"
+js-sys = "0.3.77"
+oxc = { version = "0.53.0", features = ["codegen"] }
+serde = { version = "1.0.218", features = ["derive"] }
+serde-wasm-bindgen = "0.6.5"
 wasm-bindgen = "0.2.100"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.50"
+
+[profile.release]
+opt-level = 3
+lto = true

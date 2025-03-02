@@ -6,7 +6,7 @@ let wasmSorter: {
 
 export async function initWasmSorter(logger: Logger): Promise<void> {
   try {
-    const wasm = await import("../out/wasm/wasm.js");
+    const wasm = await import("../out/wasm/digital_magistery_tailwind_sorter.js");
     wasmSorter = wasm;
     logger.debugLog("WASM sorter initialized successfully");
   } catch (error) {
