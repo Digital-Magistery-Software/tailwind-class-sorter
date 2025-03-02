@@ -4,6 +4,7 @@ import { getConfig } from "./config";
 import { RustywindManager } from "./rustywind";
 import type { Logger } from "./utils/logging";
 import type { DiagnosticResult, ExecFunction, TailwindSorterConfig } from "./utils/types";
+import { initWasmSorter, sortClassesWithWasm } from "./wasmSorter";
 
 export class TailwindSorterFormatter implements vscode.Disposable {
   private statusBarItem: vscode.StatusBarItem;
@@ -49,18 +50,22 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
   public async initialize(): Promise<void> {
     this.logger.debugLog("Starting initialization");
-    this.rustywindPath = await this.rustywindManager.findRustywindPath(this.config);
-    this.rustywindInstalled = !!this.rustywindPath;
-
-    if (this.rustywindInstalled) {
-      this.statusBarItem.text = "Tailwind Sorter";
-      this.statusBarItem.tooltip = "Sort Tailwind Classes";
+    if (this.config.useInternalSorter) {
+      await initWasmSorter(this.logger);
     } else {
-      vscode.window.showErrorMessage(
-        "Rustywind is not installed. The Digital Magistery Tailwind Class Sorter extension requires Rustywind. Please install it in your project."
-      );
-      this.statusBarItem.text = "$(alert) Tailwind Sorter (Rustywind not found)";
-      this.statusBarItem.tooltip = "Rustywind not found. Click to show details.";
+      this.rustywindPath = await this.rustywindManager.findRustywindPath(this.config);
+      this.rustywindInstalled = !!this.rustywindPath;
+
+      if (this.rustywindInstalled) {
+        this.statusBarItem.text = "Tailwind Sorter";
+        this.statusBarItem.tooltip = "Sort Tailwind Classes";
+      } else {
+        vscode.window.showErrorMessage(
+          "Rustywind is not installed. The Digital Magistery Tailwind Class Sorter extension requires Rustywind. Please install it in your project."
+        );
+        this.statusBarItem.text = "$(alert) Tailwind Sorter (Rustywind not found)";
+        this.statusBarItem.tooltip = "Rustywind not found. Click to show details.";
+      }
     }
   }
 
@@ -101,10 +106,6 @@ export class TailwindSorterFormatter implements vscode.Disposable {
       return;
     }
 
-    if (!(this.rustywindInstalled && this.rustywindPath)) {
-      return;
-    }
-
     const fileName = document.fileName;
     if (!this.isFileIncluded(fileName)) {
       this.logger.debugLog(`File ${fileName} is not a supported file type`);
@@ -113,18 +114,30 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
     const text = document.getText();
 
-    try {
-      const formatted = await this.rustywindManager.sortClasses(text, fileName, this.rustywindPath, this.config.tailwindFunctions);
-      if (formatted.trim() === text.trim()) {
-        this.logger.debugLog("No changes needed - classes already sorted");
+    if (this.config.useInternalSorter) {
+      try {
+        const formatted = await sortClassesWithWasm(text, fileName, this.logger);
+        this.logger.debugLog("Formatted document: ", formatted);
+      } catch (error) {
+        this.handleFormatError(fileName, error);
+      }
+    } else {
+      if (!(this.rustywindInstalled && this.rustywindPath)) {
         return;
       }
+      try {
+        const formatted = await this.rustywindManager.sortClasses(text, fileName, this.rustywindPath, this.config.tailwindFunctions);
+        if (formatted.trim() === text.trim()) {
+          this.logger.debugLog("No changes needed - classes already sorted");
+          return;
+        }
 
-      const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(text.length));
-      this.logger.debugLog("Classes sorted successfully");
-      return [vscode.TextEdit.replace(fullRange, formatted)];
-    } catch (error) {
-      this.handleFormatError(fileName, error);
+        const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(text.length));
+        this.logger.debugLog("Classes sorted successfully");
+        return [vscode.TextEdit.replace(fullRange, formatted)];
+      } catch (error) {
+        this.handleFormatError(fileName, error);
+      }
     }
   }
 

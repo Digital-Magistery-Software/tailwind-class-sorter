@@ -7,6 +7,7 @@ export interface TailwindSorterConfig {
   customBinaryPath?: string;
   debug: boolean;
   tailwindFunctions: string[];
+  useInternalSorter: boolean;
 }
 
 export interface TempFileOptions {

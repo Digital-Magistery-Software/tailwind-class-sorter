@@ -10,5 +10,6 @@ export function getConfig(): TailwindSorterConfig {
     customBinaryPath: config.get("customBinaryPath", ""),
     debug: config.get("debug", false),
     tailwindFunctions: config.get("tailwindFunctions", ["cn", "cva", "clsx"]),
+    useInternalSorter: config.get("useInternalSorter", true),
   };
 }

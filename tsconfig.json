@@ -10,10 +10,15 @@
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "typeRoots": [
+      "./node_modules/@types",
+      "./out/wasm"
+    ]
   },
   "include": [
-    "src"
+    "src",
+    "out/wasm/wasm.d.ts"
   ],
   "exclude": [
     "node_modules",

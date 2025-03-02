@@ -27,6 +27,7 @@ suite("RustywindManager", function () {
       customBinaryPath: "/custom/path/to/rustywind",
       debug: false,
       tailwindFunctions: [],
+      useInternalSorter: false,
     };
 
     const result = await manager.findRustywindPath(config);
@@ -43,6 +44,7 @@ suite("RustywindManager", function () {
       languageIds: [],
       debug: false,
       tailwindFunctions: [],
+      useInternalSorter: false,
     };
 
     // Create a document in a directory that doesn't exist
