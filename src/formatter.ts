@@ -116,13 +116,25 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
     if (this.config.useInternalSorter) {
       try {
+        // Use the WASM-based internal sorter
         const formatted = await sortClassesWithWasm(text, fileName, this.logger);
-        this.logger.debugLog("Formatted document: ", formatted);
+
+        // Check if anything changed
+        if (formatted.trim() === text.trim()) {
+          this.logger.debugLog("No changes needed - classes already sorted");
+          return;
+        }
+
+        // Return the edit to apply
+        const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(text.length));
+        this.logger.debugLog("Classes sorted successfully with internal sorter");
+        return [vscode.TextEdit.replace(fullRange, formatted)];
       } catch (error) {
         this.handleFormatError(fileName, error);
       }
     } else {
       if (!(this.rustywindInstalled && this.rustywindPath)) {
+        this.logger.debugLog("Rustywind is not installed or path is not set");
         return;
       }
       try {

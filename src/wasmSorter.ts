@@ -21,6 +21,17 @@ export async function sortClassesWithWasm(document: string, fileName: string, lo
     throw new Error("Internal sorter not initialized");
   }
 
-  const fileExtension = fileName.split(".").pop() || "";
-  return wasmSorter.sort_tailwind_classes(document, fileExtension);
+  try {
+    const fileExtension = fileName.split(".").pop() || "";
+
+    logger.debugLog(`Sorting Tailwind classes in ${fileName} with internal sorter`);
+
+    const result = wasmSorter.sort_tailwind_classes(document, fileExtension);
+
+    logger.debugLog("Tailwind classes sorted successfully with internal sorter");
+    return result;
+  } catch (error) {
+    logger.debugLog(`Error during internal sorting: ${error}`);
+    throw new Error(`Internal Tailwind class sorter error: ${error}`);
+  }
 }
