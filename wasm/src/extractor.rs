@@ -1,5 +1,5 @@
 use oxc::allocator::Allocator;
-use oxc::ast::ast::StringLiteral;
+use oxc::ast::ast::{StringLiteral, TemplateLiteral};
 use oxc::ast::visit::Visit;
 use oxc::parser::Parser;
 use oxc::span::SourceType;
@@ -24,7 +24,6 @@ pub struct ClassMatch {
     pub path: String,
 }
 
-/// Extract Tailwind class strings from a document
 pub fn extract_class_strings(document: &str, file_extension: &str) -> Vec<ClassMatch> {
     let allocator = Allocator::default();
 
@@ -46,6 +45,11 @@ pub fn extract_class_strings(document: &str, file_extension: &str) -> Vec<ClassM
     };
 
     visitor.visit_program(&ret.program);
+
+    console_log!(
+        "Found {} Tailwind class matches",
+        visitor.class_matches.len()
+    );
 
     // Sort by position from end to start to avoid offset issues when replacing
     visitor.class_matches.sort_by(|a, b| b.start.cmp(&a.start));
@@ -82,7 +86,47 @@ impl<'a> Visit<'a> for TailwindClassVisitor<'a> {
                 path: "string_literal".to_string(),
             });
 
-            console_log!("Found potential Tailwind classes: {}", value);
+            console_log!("Found Tailwind classes in string literal: {}", value);
+        }
+    }
+
+    fn visit_template_literal(&mut self, template_lit: &TemplateLiteral<'a>) {
+        // Process each static part (quasi) of the template literal
+        for (i, quasi) in template_lit.quasis.iter().enumerate() {
+            // Only process if the cooked value is available
+            if let Some(cooked) = &quasi.value.cooked {
+                let value = cooked.as_str();
+
+                if looks_like_class_string(value) {
+                    let start = quasi.span.start as usize;
+                    let end = quasi.span.end as usize;
+
+                    // Extract the actual text from the document
+                    let original_text = if start < self.document.len() && end <= self.document.len()
+                    {
+                        self.document[start..end].to_string()
+                    } else {
+                        value.to_string()
+                    };
+
+                    // Add to our collection of matches
+                    self.class_matches.push(ClassMatch {
+                        start,
+                        end,
+                        original: original_text,
+                        class_string: value.to_string(),
+                        path: format!("template_literal_quasi[{}]", i),
+                    });
+
+                    console_log!("Found Tailwind classes in template literal: {}", value);
+                }
+            }
+        }
+
+        // Explicitly visit each expression in the template literal
+        // This is so we find string literals inside template expressions
+        for expr in &template_lit.expressions {
+            self.visit_expression(expr);
         }
     }
 }
@@ -91,21 +135,29 @@ static TAILWIND_PATTERN: OnceLock<Regex> = OnceLock::new();
 
 /// Heuristic to determine if a string looks like Tailwind classes
 fn looks_like_class_string(value: &str) -> bool {
-    // Must be non-empty and contain at least one space
-    if value.trim().is_empty() || !value.contains(' ') {
+    // Must be non-empty
+    if value.trim().is_empty() {
         return false;
     }
 
-    let tailwind_pattern = TAILWIND_PATTERN.get_or_init(|| {
-        Regex::new(r"^(bg-|text-|p-|m-|px-|py-|mx-|my-|pt-|pr-|pb-|pl-|mt-|mr-|mb-|ml-|flex|grid|w-|h-|min-w-|min-h-|max-w-|max-h-|rounded|border|shadow|block|inline|inline-block|hidden|sm:|md:|lg:|xl:|2xl:|hover:|focus:|active:|disabled:|dark:|motion-safe:|motion-reduce:)").unwrap()
-    });
+    // Ignore strings that are just one word since they obviously don't need sorted
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.len() <= 1 {
+        return false;
+    }
 
-    let has_tailwind_pattern = value
-        .split_whitespace()
-        .any(|class| tailwind_pattern.is_match(class));
+    let has_tailwind_pattern = parts
+        .iter()
+        .any(|&class| get_tailwind_pattern().is_match(class));
 
     // Avoid strings that look like HTML or JSX
     let looks_like_markup = value.contains('<') || value.contains('>');
 
     has_tailwind_pattern && !looks_like_markup
+}
+
+fn get_tailwind_pattern() -> &'static Regex {
+    TAILWIND_PATTERN.get_or_init(|| {
+        Regex::new(r"^(bg-|text-|font-|p-|m-|px-|py-|pt-|pb-|pr-|pl-|mx-|my-|mt-|mb-|mr-|ml-|w-|h-|min-w-|min-h-|max-w-|max-h-|rounded|border|shadow|outline-|ring-|flex-|grid-|gap-|space-|divide-|opacity-|z-|top-|bottom-|left-|right-|inset-|align-|justify-|items-|content-|self-|order-|transform|rotate-|scale-|skew-|translate-|transition-|duration-|ease-|delay-|animate-|cursor-|overflow-|overscroll-|scroll-|whitespace-|break-|object-|float-|clear-|fill-|stroke-|sr-|appearance-|isolation-|backdrop-|pointer-events-|resize-|select-|snap-|touch-|table-|list-|line-|placeholder-|tracking-|leading-|contrast-|grayscale-|hue-rotate-|invert-|saturate-|sepia-|brightness-|blur-|sm:|md:|lg:|xl:|2xl:|hover:|focus:|active:|disabled:|focus-visible:|focus-within:|visited:|checked:|dark:|odd:|even:|first:|last:|only:|motion-safe:|motion-reduce:|portrait:|landscape:|focus:|hover:)").unwrap()
+    })
 }
