@@ -94,10 +94,20 @@
           ],
           "description": "List of function names that contain Tailwind classes as arguments"
         },
-        "tailwindSorter.useInternalSorter": {
+        "tailwindSorter.internalSorter.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Use the experimental internal Tailwind class sorter instead of Rustywind (experimental)"
+          "description": "Use the experimental internal Tailwind class sorter instead of Rustywind"
+        },
+        "tailwindSorter.internalSorter.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable additional debug logging for the internal sorter"
+        },
+        "tailwindSorter.internalSorter.removeDuplicateClasses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Remove duplicate Tailwind classes, keeping only the last occurrence (only applies when using internal sorter)"
         }
       }
     }

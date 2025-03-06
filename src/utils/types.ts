@@ -1,5 +1,11 @@
 import type { ExecOptions } from "node:child_process";
 
+export interface InternalSorterConfig {
+  enabled: boolean;
+  debug: boolean;
+  removeDuplicateClasses: boolean;
+}
+
 export interface TailwindSorterConfig {
   enable: boolean;
   includeFiles: string[];
@@ -7,7 +13,7 @@ export interface TailwindSorterConfig {
   customBinaryPath?: string;
   debug: boolean;
   tailwindFunctions: string[];
-  useInternalSorter: boolean;
+  internalSorter: InternalSorterConfig;
 }
 
 export interface TempFileOptions {

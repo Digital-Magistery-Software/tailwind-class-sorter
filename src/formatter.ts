@@ -4,7 +4,7 @@ import { getConfig } from "./config";
 import { RustywindManager } from "./rustywind";
 import type { Logger } from "./utils/logging";
 import type { DiagnosticResult, ExecFunction, TailwindSorterConfig } from "./utils/types";
-import { initWasmSorter, sortClassesWithWasm } from "./wasmSorter";
+import { configureWasmSorter, initWasmSorter, sortClassesWithWasm } from "./wasmSorter";
 
 export class TailwindSorterFormatter implements vscode.Disposable {
   private statusBarItem: vscode.StatusBarItem;
@@ -50,8 +50,10 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
   public async initialize(): Promise<void> {
     this.logger.debugLog("Starting initialization");
-    if (this.config.useInternalSorter) {
-      await initWasmSorter(this.logger);
+    if (this.config.internalSorter.enabled) {
+      await initWasmSorter(this.logger, this.config);
+      this.statusBarItem.text = "Tailwind Sorter (Internal)";
+      this.statusBarItem.tooltip = "Using internal Tailwind class sorter";
     } else {
       this.rustywindPath = await this.rustywindManager.findRustywindPath(this.config);
       this.rustywindInstalled = !!this.rustywindPath;
@@ -64,7 +66,7 @@ export class TailwindSorterFormatter implements vscode.Disposable {
           "Rustywind is not installed. The Digital Magistery Tailwind Class Sorter extension requires Rustywind. Please install it in your project."
         );
         this.statusBarItem.text = "$(alert) Tailwind Sorter (Rustywind not found)";
-        this.statusBarItem.tooltip = "Rustywind not found. Click to show details.";
+        this.statusBarItem.tooltip = "Rustywind not found.";
       }
     }
   }
@@ -81,8 +83,24 @@ export class TailwindSorterFormatter implements vscode.Disposable {
   }
 
   public updateConfig(): void {
+    const oldConfig = this.config;
     this.config = getConfig();
     this.logger.updateConfig(this.config);
+
+    // Check if we're switching between internal and rustywind
+    if (oldConfig.internalSorter.enabled !== this.config.internalSorter.enabled) {
+      this.initialize(); // Re-initialize with the new sorter
+      return;
+    }
+
+    // If using the internal sorter and any internal sorter configuration has changed
+    if (
+      this.config.internalSorter.enabled &&
+      (oldConfig.internalSorter.removeDuplicateClasses !== this.config.internalSorter.removeDuplicateClasses ||
+        oldConfig.internalSorter.debug !== this.config.internalSorter.debug)
+    ) {
+      configureWasmSorter(this.config, this.logger);
+    }
   }
 
   public async diagnose(document: vscode.TextDocument): Promise<DiagnosticResult> {
@@ -114,10 +132,10 @@ export class TailwindSorterFormatter implements vscode.Disposable {
 
     const text = document.getText();
 
-    if (this.config.useInternalSorter) {
+    if (this.config.internalSorter.enabled) {
       try {
         // Use the WASM-based internal sorter
-        const formatted = await sortClassesWithWasm(text, fileName, this.logger);
+        const formatted = await sortClassesWithWasm(text, fileName, this.logger, this.config);
 
         // Check if anything changed
         if (formatted.trim() === text.trim()) {

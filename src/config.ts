@@ -10,6 +10,10 @@ export function getConfig(): TailwindSorterConfig {
     customBinaryPath: config.get("customBinaryPath", ""),
     debug: config.get("debug", false),
     tailwindFunctions: config.get("tailwindFunctions", ["cn", "cva", "clsx"]),
-    useInternalSorter: config.get("useInternalSorter", true),
+    internalSorter: {
+      enabled: config.get("internalSorter.enabled", false),
+      debug: config.get("internalSorter.debug", false),
+      removeDuplicateClasses: config.get("internalSorter.removeDuplicateClasses", true),
+    },
   };
 }

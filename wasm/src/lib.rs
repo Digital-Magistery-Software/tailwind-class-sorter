@@ -5,7 +5,7 @@ pub mod sorter;
 pub mod utils;
 
 use extractor::extract_class_strings;
-use sorter::sort_classes;
+use sorter::{is_debug_enabled, set_debug_mode, set_remove_duplicates, sort_classes};
 
 #[wasm_bindgen]
 extern "C" {
@@ -20,6 +20,26 @@ macro_rules! console_log {
     }
 }
 
+#[macro_export]
+macro_rules! debug_log {
+    ($($t:tt)*) => {
+        if is_debug_enabled() {
+            $crate::log(&format!("[DEBUG] {}", format!($($t)*)))
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub fn configure_tailwind_sorter(remove_duplicates: bool, debug_mode: bool) {
+    console_log!(
+        "Configuring Tailwind sorter with remove_duplicates={}, debug_mode={}",
+        remove_duplicates,
+        debug_mode
+    );
+    set_remove_duplicates(remove_duplicates);
+    set_debug_mode(debug_mode);
+}
+
 #[wasm_bindgen]
 pub fn sort_tailwind_classes(document: &str, file_extension: &str) -> String {
     console_log!("Starting Tailwind class sorting for {}", file_extension);
@@ -32,9 +52,8 @@ pub fn sort_tailwind_classes(document: &str, file_extension: &str) -> String {
         return document.to_string();
     }
 
-    console_log!("Found {} class matches to process", class_matches.len());
+    debug_log!("Found {} class matches to process", class_matches.len());
 
-    // Create a mutable copy of the document
     let mut result = document.to_string();
     let mut replaced_count = 0;
 
@@ -45,6 +64,9 @@ pub fn sort_tailwind_classes(document: &str, file_extension: &str) -> String {
 
         // Only replace if the order changed
         if sorted_classes != class_match.class_string {
+            debug_log!("Original classes: \"{}\"", class_match.class_string);
+            debug_log!("Sorted classes:   \"{}\"", sorted_classes);
+
             let (starts_with_quote, ends_with_quote) = if (class_match.original.starts_with('"')
                 && class_match.original.ends_with('"'))
                 || (class_match.original.starts_with('\'') && class_match.original.ends_with('\''))
@@ -73,7 +95,7 @@ pub fn sort_tailwind_classes(document: &str, file_extension: &str) -> String {
                 result.replace_range(start..end, &replacement);
                 replaced_count += 1;
 
-                console_log!(
+                debug_log!(
                     "Sorted: \"{}\" → \"{}\"",
                     class_match.class_string,
                     sorted_classes
@@ -86,7 +108,7 @@ pub fn sort_tailwind_classes(document: &str, file_extension: &str) -> String {
                 );
             }
         } else {
-            console_log!(
+            debug_log!(
                 "Classes already in correct order: \"{}\"",
                 class_match.class_string
             );
