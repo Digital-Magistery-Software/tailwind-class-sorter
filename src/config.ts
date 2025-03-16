@@ -10,5 +10,11 @@ export function getConfig(): TailwindSorterConfig {
     customBinaryPath: config.get("customBinaryPath", ""),
     debug: config.get("debug", false),
     tailwindFunctions: config.get("tailwindFunctions", ["cn", "cva", "clsx"]),
+    internalSorter: {
+      enabled: config.get("internalSorter.enabled", false),
+      debug: config.get("internalSorter.debug", false),
+      removeDuplicateClasses: config.get("internalSorter.removeDuplicateClasses", true),
+      normalizeWhitespace: config.get("internalSorter.normalizeWhitespace", true),
+    },
   };
 }

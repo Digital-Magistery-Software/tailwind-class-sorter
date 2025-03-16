@@ -12,3 +12,7 @@ node_modules
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Rust build artifacts
+wasm/target/
+wasm/pkg/

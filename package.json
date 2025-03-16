@@ -6,6 +6,10 @@
   "displayName": "Digital Magistery Tailwind Class Sorter",
   "description": "Sort Tailwind CSS classes on save",
   "version": "1.2.0",
+  "private": true,
+  "workspaces": [
+    "wasm"
+  ],
   "icon": "icon.png",
   "repository": {
     "type": "git",
@@ -89,6 +93,26 @@
             "clsx"
           ],
           "description": "List of function names that contain Tailwind classes as arguments"
+        },
+        "tailwindSorter.internalSorter.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use the experimental internal Tailwind class sorter instead of Rustywind"
+        },
+        "tailwindSorter.internalSorter.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable additional debug logging for the internal sorter"
+        },
+        "tailwindSorter.internalSorter.removeDuplicateClasses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Remove duplicate Tailwind classes, keeping only the last occurrence (only applies when using internal sorter)"
+        },
+        "tailwindSorter.internalSorter.normalizeWhitespace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Normalize whitespace between classes (only applies when using internal sorter)"
         }
       }
     }
@@ -98,7 +122,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "yarn run compile",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "build:wasm": "node scripts/build-wasm.js",
+    "build": "yarn run build:wasm && yarn run compile"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

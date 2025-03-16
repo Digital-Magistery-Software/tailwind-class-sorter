@@ -1,0 +1,22 @@
+[package]
+name = "digital-magistery-tailwind-sorter"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+js-sys = "0.3.77"
+oxc = { version = "0.53.0", features = ["codegen"] }
+regex = "1.11.1"
+serde = { version = "1.0.218", features = ["derive"] }
+serde-wasm-bindgen = "0.6.5"
+wasm-bindgen = "0.2.100"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.50"
+
+[profile.release]
+opt-level = 3
+lto = true
