@@ -4,6 +4,7 @@ export interface InternalSorterConfig {
   enabled: boolean;
   debug: boolean;
   removeDuplicateClasses: boolean;
+  normalizeWhitespace: boolean;
 }
 
 export interface TailwindSorterConfig {

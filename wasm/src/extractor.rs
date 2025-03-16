@@ -3,11 +3,10 @@ use oxc::ast::ast::{StringLiteral, TemplateLiteral};
 use oxc::ast::visit::Visit;
 use oxc::parser::Parser;
 use oxc::span::SourceType;
-use regex::Regex;
 use std::path::Path;
-use std::sync::OnceLock;
 
 use crate::console_log;
+use crate::sorter::{is_arbitrary_class, is_tailwind_class};
 
 /// Represents a class string match in the document
 #[derive(Debug, Clone)]
@@ -131,8 +130,6 @@ impl<'a> Visit<'a> for TailwindClassVisitor<'a> {
     }
 }
 
-static TAILWIND_PATTERN: OnceLock<Regex> = OnceLock::new();
-
 /// Heuristic to determine if a string looks like Tailwind classes
 fn looks_like_class_string(value: &str) -> bool {
     // Must be non-empty
@@ -140,24 +137,63 @@ fn looks_like_class_string(value: &str) -> bool {
         return false;
     }
 
-    // Ignore strings that are just one word since they obviously don't need sorted
+    // Ignore strings that are just one word
     let parts: Vec<&str> = value.split_whitespace().collect();
     if parts.len() <= 1 {
         return false;
     }
 
-    let has_tailwind_pattern = parts
+    // Count how many words look like Tailwind classes
+    let tailwind_class_count = parts
         .iter()
-        .any(|&class| get_tailwind_pattern().is_match(class));
+        .filter(|&&class| is_tailwind_class(class) || is_arbitrary_class(class))
+        .count();
 
-    // Avoid strings that look like HTML or JSX
+    // Require at least two words that look like Tailwind classes
+    // and at least 40% of the words should look like Tailwind classes
+    let min_tailwind_count = 2;
+    let min_tailwind_percentage = 0.4;
+    let has_enough_tailwind_classes = tailwind_class_count >= min_tailwind_count
+        && (tailwind_class_count as f64 / parts.len() as f64) >= min_tailwind_percentage;
+
+    // Reject patterns that are very unlikely to be Tailwind class lists
     let looks_like_markup = value.contains('<') || value.contains('>');
+    let looks_like_assignment = value.contains('=') && !value.contains('[') && !value.contains('(');
 
-    has_tailwind_pattern && !looks_like_markup
-}
+    let looks_like_url = value.contains("://")
+        || (value.matches('.').count() > 1
+            && value.contains('/')
+            && !value.split_whitespace().any(|w| w.contains('-')));
 
-fn get_tailwind_pattern() -> &'static Regex {
-    TAILWIND_PATTERN.get_or_init(|| {
-        Regex::new(r"^(bg-|text-|font-|p-|m-|px-|py-|pt-|pb-|pr-|pl-|mx-|my-|mt-|mb-|mr-|ml-|w-|h-|min-w-|min-h-|max-w-|max-h-|rounded|border|shadow|outline-|ring-|flex-|grid-|gap-|space-|divide-|opacity-|z-|top-|bottom-|left-|right-|inset-|align-|justify-|items-|content-|self-|order-|transform|rotate-|scale-|skew-|translate-|transition-|duration-|ease-|delay-|animate-|cursor-|overflow-|overscroll-|scroll-|whitespace-|break-|object-|float-|clear-|fill-|stroke-|sr-|appearance-|isolation-|backdrop-|pointer-events-|resize-|select-|snap-|touch-|table-|list-|line-|placeholder-|tracking-|leading-|contrast-|grayscale-|hue-rotate-|invert-|saturate-|sepia-|brightness-|blur-|sm:|md:|lg:|xl:|2xl:|hover:|focus:|active:|disabled:|focus-visible:|focus-within:|visited:|checked:|dark:|odd:|even:|first:|last:|only:|motion-safe:|motion-reduce:|portrait:|landscape:|focus:|hover:)").unwrap()
-    })
+    let looks_like_json = value.starts_with('{') || value.starts_with('[');
+
+    let looks_like_path = value.contains('/')
+        && !value.contains(" / ")
+        && !value.split_whitespace().any(|word| {
+            // Check for Tailwind fraction pattern (e.g., w-1/2, h-3/4)
+            word.matches('/').count() == 1
+                && word.split('/').all(|part| !part.is_empty())
+                && (word.contains('-') || word.contains(':'))
+        });
+
+    let looks_like_template = value.contains("${");
+
+    let has_javascript_operators = value.contains("&&")
+        || value.contains("||")
+        || value.contains(" * ")
+        || value.contains(" + ")
+        || value.contains(" +")
+        || value.contains("+ ");
+
+    let has_semicolon = value.contains(';');
+
+    has_enough_tailwind_classes
+        && !looks_like_markup
+        && !looks_like_assignment
+        && !looks_like_url
+        && !looks_like_json
+        && !looks_like_path
+        && !looks_like_template
+        && !has_javascript_operators
+        && !has_semicolon
 }

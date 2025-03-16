@@ -3,7 +3,7 @@ import type { TailwindSorterConfig } from "./utils/types";
 
 let wasmSorter: {
   sort_tailwind_classes: (document: string, fileExtension: string) => string;
-  configure_tailwind_sorter: (removeDuplicates: boolean, debugMode: boolean) => void;
+  configure_tailwind_sorter: (removeDuplicates: boolean, debugMode: boolean, normalizeWhitespace: boolean) => void;
 } | null = null;
 
 export async function initWasmSorter(logger: Logger, config: TailwindSorterConfig): Promise<void> {
@@ -29,10 +29,13 @@ export function configureWasmSorter(config: TailwindSorterConfig, logger: Logger
 
   const removeDuplicates = config.internalSorter.removeDuplicateClasses;
   const debugMode = config.internalSorter.debug;
+  const normalizeWhitespace = config.internalSorter.normalizeWhitespace;
 
-  logger.debugLog(`Configuring WASM sorter with removeDuplicateClasses=${removeDuplicates}, debug=${debugMode}`);
+  logger.debugLog(
+    `Configuring WASM sorter with removeDuplicateClasses=${removeDuplicates}, debug=${debugMode}, normalizeWhitespace=${normalizeWhitespace}`
+  );
 
-  wasmSorter.configure_tailwind_sorter(removeDuplicates, debugMode);
+  wasmSorter.configure_tailwind_sorter(removeDuplicates, debugMode, normalizeWhitespace);
 }
 
 export async function sortClassesWithWasm(document: string, fileName: string, logger: Logger, config: TailwindSorterConfig): Promise<string> {

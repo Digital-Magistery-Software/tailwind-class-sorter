@@ -1,11 +1,14 @@
 use wasm_bindgen::prelude::*;
 
 pub mod extractor;
+mod prefixes;
 pub mod sorter;
 pub mod utils;
 
 use extractor::extract_class_strings;
-use sorter::{is_debug_enabled, set_debug_mode, set_remove_duplicates, sort_classes};
+use sorter::{
+    is_debug_enabled, set_debug_mode, set_normalize_whitespace, set_remove_duplicates, sort_classes,
+};
 
 #[wasm_bindgen]
 extern "C" {
@@ -30,14 +33,20 @@ macro_rules! debug_log {
 }
 
 #[wasm_bindgen]
-pub fn configure_tailwind_sorter(remove_duplicates: bool, debug_mode: bool) {
+pub fn configure_tailwind_sorter(
+    remove_duplicates: bool,
+    debug_mode: bool,
+    normalize_whitespace: bool,
+) {
     console_log!(
-        "Configuring Tailwind sorter with remove_duplicates={}, debug_mode={}",
+        "Configuring Tailwind sorter with remove_duplicates={}, debug_mode={}, normalize_whitespace={}",
         remove_duplicates,
-        debug_mode
+        debug_mode,
+        normalize_whitespace
     );
     set_remove_duplicates(remove_duplicates);
     set_debug_mode(debug_mode);
+    set_normalize_whitespace(normalize_whitespace);
 }
 
 #[wasm_bindgen]

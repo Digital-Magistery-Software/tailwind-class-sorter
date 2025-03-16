@@ -2,8 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
+use crate::debug_log;
+use crate::prefixes::{TailwindPrefix, ValueType, find_order, get_tailwind_prefixes};
+
 static REMOVE_DUPLICATES: OnceLock<Mutex<bool>> = OnceLock::new();
 static DEBUG_MODE: OnceLock<Mutex<bool>> = OnceLock::new();
+static NORMALIZE_WHITESPACE: OnceLock<Mutex<bool>> = OnceLock::new();
 
 pub fn set_remove_duplicates(remove: bool) {
     let mutex = REMOVE_DUPLICATES.get_or_init(|| Mutex::new(true));
@@ -19,686 +23,296 @@ pub fn set_debug_mode(debug: bool) {
     }
 }
 
+pub fn set_normalize_whitespace(normalize: bool) {
+    let mutex = NORMALIZE_WHITESPACE.get_or_init(|| Mutex::new(true));
+    if let Ok(mut value) = mutex.lock() {
+        *value = normalize;
+    }
+}
+
 pub fn is_debug_enabled() -> bool {
     let mutex = DEBUG_MODE.get_or_init(|| Mutex::new(false));
     mutex.lock().map(|guard| *guard).unwrap_or(false)
 }
 
-static PROPERTY_ORDER: OnceLock<HashMap<&'static str, usize>> = OnceLock::new();
-static TAILWIND_PROPERTY_MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-static STANDALONE_UTILITIES: OnceLock<HashSet<&'static str>> = OnceLock::new();
-static VALID_PREFIXES: OnceLock<HashSet<&'static str>> = OnceLock::new();
-
-fn get_property_order_map() -> &'static HashMap<&'static str, usize> {
-    PROPERTY_ORDER.get_or_init(|| {
-        let mut order = HashMap::new();
-        let properties = [
-            "container-type",              // 0
-            "pointer-events",              // 1
-            "visibility",                  // 2
-            "position",                    // 3
-            "inset",                       // 4
-            "inset-inline",                // 5
-            "inset-block",                 // 6
-            "inset-inline-start",          // 7
-            "inset-inline-end",            // 8
-            "top",                         // 9
-            "right",                       // 10
-            "bottom",                      // 11
-            "left",                        // 12
-            "isolation",                   // 13
-            "z-index",                     // 14
-            "order",                       // 15
-            "grid-column",                 // 16
-            "grid-column-start",           // 17
-            "grid-column-end",             // 18
-            "grid-row",                    // 19
-            "grid-row-start",              // 20
-            "grid-row-end",                // 21
-            "float",                       // 22
-            "clear",                       // 23
-            "--tw-container-component",    // 24
-            "margin",                      // 25
-            "margin-inline",               // 26
-            "margin-block",                // 27
-            "margin-inline-start",         // 28
-            "margin-inline-end",           // 29
-            "margin-top",                  // 30
-            "margin-right",                // 31
-            "margin-bottom",               // 32
-            "margin-left",                 // 33
-            "box-sizing",                  // 34
-            "display",                     // 35
-            "field-sizing",                // 36
-            "aspect-ratio",                // 37
-            "height",                      // 38
-            "max-height",                  // 39
-            "min-height",                  // 40
-            "width",                       // 41
-            "max-width",                   // 42
-            "min-width",                   // 43
-            "flex",                        // 44
-            "flex-shrink",                 // 45
-            "flex-grow",                   // 46
-            "flex-basis",                  // 47
-            "table-layout",                // 48
-            "caption-side",                // 49
-            "border-collapse",             // 50
-            "border-spacing",              // 51
-            "transform-origin",            // 52
-            "translate",                   // 53
-            "--tw-translate-x",            // 54
-            "--tw-translate-y",            // 55
-            "--tw-translate-z",            // 56
-            "scale",                       // 57
-            "--tw-scale-x",                // 58
-            "--tw-scale-y",                // 59
-            "--tw-scale-z",                // 60
-            "rotate",                      // 61
-            "--tw-rotate-x",               // 62
-            "--tw-rotate-y",               // 63
-            "--tw-rotate-z",               // 64
-            "--tw-skew-x",                 // 65
-            "--tw-skew-y",                 // 66
-            "transform",                   // 67
-            "animation",                   // 68
-            "cursor",                      // 69
-            "touch-action",                // 70
-            "--tw-pan-x",                  // 71
-            "--tw-pan-y",                  // 72
-            "--tw-pinch-zoom",             // 73
-            "resize",                      // 74
-            "scroll-snap-type",            // 75
-            "--tw-scroll-snap-strictness", // 76
-            "scroll-snap-align",           // 77
-            "scroll-snap-stop",            // 78
-            "scroll-margin",               // 79
-            "scroll-margin-inline",        // 80
-            "scroll-margin-block",         // 81
-            "scroll-margin-inline-start",  // 82
-            "scroll-margin-inline-end",    // 83
-            "scroll-margin-top",           // 84
-            "scroll-margin-right",         // 85
-            "scroll-margin-bottom",        // 86
-            "scroll-margin-left",          // 87
-            "scroll-padding",              // 88
-            "scroll-padding-inline",       // 89
-            "scroll-padding-block",        // 90
-            "scroll-padding-inline-start", // 91
-            "scroll-padding-inline-end",   // 92
-            "scroll-padding-top",          // 93
-            "scroll-padding-right",        // 94
-            "scroll-padding-bottom",       // 95
-            "scroll-padding-left",         // 96
-            "list-style-position",         // 97
-            "list-style-type",             // 98
-            "list-style-image",            // 99
-            "appearance",                  // 100
-            "columns",                     // 101
-            "break-before",                // 102
-            "break-inside",                // 103
-            "break-after",                 // 104
-            "grid-auto-columns",           // 105
-            "grid-auto-flow",              // 106
-            "grid-auto-rows",              // 107
-            "grid-template-columns",       // 108
-            "grid-template-rows",          // 109
-            "flex-direction",              // 110
-            "flex-wrap",                   // 111
-            "place-content",               // 112
-            "place-items",                 // 113
-            "align-content",               // 114
-            "align-items",                 // 115
-            "justify-content",             // 116
-            "justify-items",               // 117
-            "gap",                         // 118
-            "column-gap",                  // 119
-            "row-gap",                     // 120
-            "--tw-space-x-reverse",        // 121
-            "--tw-space-y-reverse",        // 122
-            "divide-x-width",              // 123
-            "divide-y-width",              // 124
-            "--tw-divide-y-reverse",       // 125
-            "divide-style",                // 126
-            "divide-color",                // 127
-            "place-self",                  // 128
-            "align-self",                  // 129
-            "justify-self",                // 130
-            "overflow",                    // 131
-            "overflow-x",                  // 132
-            "overflow-y",                  // 133
-            "overscroll-behavior",         // 134
-            "overscroll-behavior-x",       // 135
-            "overscroll-behavior-y",       // 136
-            "scroll-behavior",             // 137
-            "border-radius",               // 138
-            "border-start-radius",         // 139
-            "border-end-radius",           // 140
-            "border-top-radius",           // 141
-            "border-right-radius",         // 142
-            "border-bottom-radius",        // 143
-            "border-left-radius",          // 144
-            "border-start-start-radius",   // 145
-            "border-start-end-radius",     // 146
-            "border-end-end-radius",       // 147
-            "border-end-start-radius",     // 148
-            "border-top-left-radius",      // 149
-            "border-top-right-radius",     // 150
-            "border-bottom-right-radius",  // 151
-            "border-bottom-left-radius",   // 152
-            "border-width",                // 153
-            "border-inline-width",         // 154
-            "border-block-width",          // 155
-            "border-inline-start-width",   // 156
-            "border-inline-end-width",     // 157
-            "border-top-width",            // 158
-            "border-right-width",          // 159
-            "border-bottom-width",         // 160
-            "border-left-width",           // 161
-            "border-style",                // 162
-            "border-inline-style",         // 163
-            "border-block-style",          // 164
-            "border-inline-start-style",   // 165
-            "border-inline-end-style",     // 166
-            "border-top-style",            // 167
-            "border-right-style",          // 168
-            "border-bottom-style",         // 169
-            "border-left-style",           // 170
-            "border-color",                // 171
-            "border-inline-color",         // 172
-            "border-block-color",          // 173
-            "border-inline-start-color",   // 174
-            "border-inline-end-color",     // 175
-            "border-top-color",            // 176
-            "border-right-color",          // 177
-            "border-bottom-color",         // 178
-            "border-left-color",           // 179
-            "background-color",            // 180
-            "background-image",            // 181
-            "--tw-gradient-position",      // 182
-            "--tw-gradient-stops",         // 183
-            "--tw-gradient-via-stops",     // 184
-            "--tw-gradient-from",          // 185
-            "--tw-gradient-from-position", // 186
-            "--tw-gradient-via",           // 187
-            "--tw-gradient-via-position",  // 188
-            "--tw-gradient-to",            // 189
-            "--tw-gradient-to-position",   // 190
-            "box-decoration-break",        // 191
-            "background-size",             // 192
-            "background-attachment",       // 193
-            "background-clip",             // 194
-            "background-position",         // 195
-            "background-repeat",           // 196
-            "background-origin",           // 197
-            "fill",                        // 198
-            "stroke",                      // 199
-            "stroke-width",                // 200
-            "object-fit",                  // 201
-            "object-position",             // 202
-            "padding",                     // 203
-            "padding-inline",              // 204
-            "padding-block",               // 205
-            "padding-inline-start",        // 206
-            "padding-inline-end",          // 207
-            "padding-top",                 // 208
-            "padding-right",               // 209
-            "padding-bottom",              // 210
-            "padding-left",                // 211
-            "text-align",                  // 212
-            "text-indent",                 // 213
-            "vertical-align",              // 214
-            "font-family",                 // 215
-            "font-size",                   // 216
-            "line-height",                 // 217
-            "font-weight",                 // 218
-            "letter-spacing",              // 219
-            "text-wrap",                   // 220
-            "overflow-wrap",               // 221
-            "word-break",                  // 222
-            "text-overflow",               // 223
-            "hyphens",                     // 224
-            "white-space",                 // 225
-            "color",                       // 226
-            "text-transform",              // 227
-            "font-style",                  // 228
-            "font-stretch",                // 229
-            "font-variant-numeric",        // 230
-            "text-decoration-line",        // 231
-            "text-decoration-color",       // 232
-            "text-decoration-style",       // 233
-            "text-decoration-thickness",   // 234
-            "text-underline-offset",       // 235
-            "-webkit-font-smoothing",      // 236
-            "placeholder-color",           // 237
-            "caret-color",                 // 238
-            "accent-color",                // 239
-            "color-scheme",                // 240
-            "opacity",                     // 241
-            "background-blend-mode",       // 242
-            "mix-blend-mode",              // 243
-            "box-shadow",                  // 244
-            "--tw-shadow",                 // 245
-            "--tw-shadow-color",           // 246
-            "--tw-ring-shadow",            // 247
-            "--tw-ring-color",             // 248
-            "--tw-inset-shadow",           // 249
-            "--tw-inset-shadow-color",     // 250
-            "--tw-inset-ring-shadow",      // 251
-            "--tw-inset-ring-color",       // 252
-            "--tw-ring-offset-width",      // 253
-            "--tw-ring-offset-color",      // 254
-            "outline",                     // 255
-            "outline-width",               // 256
-            "outline-offset",              // 257
-            "outline-color",               // 258
-            "--tw-blur",                   // 259
-            "--tw-brightness",             // 260
-            "--tw-contrast",               // 261
-            "--tw-drop-shadow",            // 262
-            "--tw-grayscale",              // 263
-            "--tw-hue-rotate",             // 264
-            "--tw-invert",                 // 265
-            "--tw-saturate",               // 266
-            "--tw-sepia",                  // 267
-            "filter",                      // 268
-            "--tw-backdrop-blur",          // 269
-            "--tw-backdrop-brightness",    // 270
-            "--tw-backdrop-contrast",      // 271
-            "--tw-backdrop-grayscale",     // 272
-            "--tw-backdrop-hue-rotate",    // 273
-            "--tw-backdrop-invert",        // 274
-            "--tw-backdrop-opacity",       // 275
-            "--tw-backdrop-saturate",      // 276
-            "--tw-backdrop-sepia",         // 277
-            "backdrop-filter",             // 278
-            "transition-property",         // 279
-            "transition-behavior",         // 280
-            "transition-delay",            // 281
-            "transition-duration",         // 282
-            "transition-timing-function",  // 283
-            "will-change",                 // 284
-            "contain",                     // 285
-            "content",                     // 286
-            "forced-color-adjust",         // 287
-        ];
-
-        for (index, &prop) in properties.iter().enumerate() {
-            order.insert(prop, index);
-        }
-        order
-    })
+fn is_normalize_whitespace_enabled() -> bool {
+    let mutex = NORMALIZE_WHITESPACE.get_or_init(|| Mutex::new(true));
+    mutex.lock().map(|guard| *guard).unwrap_or(true)
 }
 
-fn get_tailwind_property_map() -> &'static HashMap<&'static str, &'static str> {
-    TAILWIND_PROPERTY_MAP.get_or_init(|| {
-        let mut map = HashMap::new();
+fn is_remove_duplicates_enabled() -> bool {
+    let mutex = REMOVE_DUPLICATES.get_or_init(|| Mutex::new(true));
+    mutex.lock().map(|guard| *guard).unwrap_or(true)
+}
 
-        // Pointer events
-        map.insert("pointer-events-", "pointer-events");
+/// Check if a class contains arbitrary values with brackets or custom properties with parentheses
+pub fn is_arbitrary_class(class: &str) -> bool {
+    // Check for either bracket syntax (arbitrary values) or parentheses syntax (custom properties in v4)
+    (class.contains('[') && class.contains(']')) || (class.contains('(') && class.contains(')'))
+}
 
-        // Position and layout
-        map.insert("static", "position");
-        map.insert("fixed", "position");
-        map.insert("absolute", "position");
-        map.insert("relative", "position");
-        map.insert("sticky", "position");
+/// Check if a class is a variant (has a colon but is not an arbitrary property with a colon)
+pub fn is_variant(class: &str) -> bool {
+    // First, check if it's an arbitrary property - in that case, the colon might be within brackets
+    if is_arbitrary_class(class) {
+        // For arbitrary properties, we need to check if the colon is outside brackets/parentheses
+        let mut inside_brackets = false;
+        let mut inside_parens = false;
+        let mut has_variant_colon = false;
 
-        map.insert("inset-", "inset");
-        map.insert("top-", "top");
-        map.insert("right-", "right");
-        map.insert("bottom-", "bottom");
-        map.insert("left-", "left");
+        for c in class.chars() {
+            match c {
+                '[' => inside_brackets = true,
+                ']' => inside_brackets = false,
+                '(' => inside_parens = true,
+                ')' => inside_parens = false,
+                ':' => {
+                    if !inside_brackets && !inside_parens {
+                        has_variant_colon = true;
+                    }
+                }
+                _ => {}
+            }
+        }
 
-        map.insert("z-", "z-index");
-        map.insert("order-", "order");
+        return has_variant_colon;
+    }
 
-        // Float/Clear
-        map.insert("float-", "float");
-        map.insert("clear-", "clear");
+    // For normal classes, just check if it contains a colon
+    class.contains(':')
+}
 
-        // Box model
-        map.insert("m-", "margin");
-        map.insert("mx-", "margin-inline");
-        map.insert("my-", "margin-block");
-        map.insert("mt-", "margin-top");
-        map.insert("mr-", "margin-right");
-        map.insert("mb-", "margin-bottom");
-        map.insert("ml-", "margin-left");
+/// Extract the property/attribute part from an arbitrary class or custom property
+pub fn extract_arbitrary_attribute(class: &str) -> &str {
+    // Full arbitrary property like "[color:red]"
+    if class.starts_with('[') && class.ends_with(']') {
+        return &class[1..class.len() - 1];
+    }
 
-        map.insert("p-", "padding");
-        map.insert("px-", "padding-inline");
-        map.insert("py-", "padding-block");
-        map.insert("pt-", "padding-top");
-        map.insert("pr-", "padding-right");
-        map.insert("pb-", "padding-bottom");
-        map.insert("pl-", "padding-left");
+    // CSS custom property with Tailwind v4 parentheses syntax like "(--color)"
+    if class.starts_with('(') && class.ends_with(')') {
+        return &class[1..class.len() - 1];
+    }
 
-        map.insert("w-", "width");
-        map.insert("min-w-", "min-width");
-        map.insert("max-w-", "max-width");
-        map.insert("h-", "height");
-        map.insert("min-h-", "min-height");
-        map.insert("max-h-", "max-height");
+    // Prefixed arbitrary value like "bg-[#ff0000]"
+    if let Some(bracket_start) = class.find('[') {
+        if let Some(bracket_end) = class.rfind(']') {
+            return &class[bracket_start + 1..bracket_end];
+        }
+    }
 
-        // Display
-        map.insert("block", "display");
-        map.insert("inline-block", "display");
-        map.insert("inline", "display");
-        map.insert("flex", "display");
-        map.insert("inline-flex", "display");
-        map.insert("table", "display");
-        map.insert("grid", "display");
-        map.insert("inline-grid", "display");
-        map.insert("contents", "display");
-        map.insert("hidden", "display");
+    // Prefixed CSS custom property with Tailwind v4 syntax like "bg-(--color)"
+    if let Some(paren_start) = class.find('(') {
+        if let Some(paren_end) = class.rfind(')') {
+            return &class[paren_start + 1..paren_end];
+        }
+    }
 
-        // Visibility
-        map.insert("visible", "visibility");
-        map.insert("invisible", "visibility");
+    // Default fallback
+    ""
+}
 
-        // Aspect ratio
-        map.insert("aspect-", "aspect-ratio");
+/// Split a class string into individual classes, preserving brackets and parentheses
+pub fn split_preserving_brackets(class_string: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut start = 0;
+    let mut bracket_depth = 0;
+    let mut paren_depth = 0;
 
-        // Flexbox
-        map.insert("flex-", "flex");
-        map.insert("flex-grow", "flex-grow");
-        map.insert("flex-grow-", "flex-grow");
-        map.insert("flex-shrink", "flex-shrink");
-        map.insert("flex-shrink-", "flex-shrink");
-        map.insert("flex-basis-", "flex-basis");
+    for (i, c) in class_string.char_indices() {
+        match c {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth -= 1,
+            '(' => paren_depth += 1,
+            ')' => paren_depth -= 1,
+            ' ' => {
+                // Only split on spaces outside of brackets/parentheses
+                if bracket_depth == 0 && paren_depth == 0 {
+                    let substring = class_string[start..i].trim();
+                    if !substring.is_empty() {
+                        result.push(substring);
+                    }
+                    start = i + 1; // Skip the space
+                }
+            }
+            _ => {}
+        }
+    }
 
-        // Grid
-        map.insert("grid-cols-", "grid-template-columns");
-        map.insert("grid-rows-", "grid-template-rows");
-        map.insert("grid-col-", "grid-column");
-        map.insert("col-", "grid-column");
-        map.insert("row-", "grid-row");
-        map.insert("grid-flow-", "grid-auto-flow");
+    // Add the last class
+    let final_class = class_string[start..].trim();
+    if !final_class.is_empty() {
+        result.push(final_class);
+    }
 
-        // Gap
-        map.insert("gap-", "gap");
-        map.insert("gap-x-", "column-gap");
-        map.insert("gap-y-", "row-gap");
+    result
+}
 
-        // Alignment
-        map.insert("justify-", "justify-content");
-        map.insert("content-", "align-content");
-        map.insert("items-", "align-items");
-        map.insert("self-", "align-self");
-        map.insert("place-", "place-content");
+fn remove_duplicates_from_sorted<'a>(sorted_classes: &[&'a str]) -> (Vec<&'a str>, HashSet<usize>) {
+    let mut seen_classes = HashSet::new();
+    let mut result = Vec::new();
+    let mut removed_indices = HashSet::new();
 
-        // Spacing
-        map.insert("space-x-", "--tw-space-x-reverse");
-        map.insert("space-y-", "--tw-space-y-reverse");
-        map.insert("divide-x-", "divide-x-width");
-        map.insert("divide-y-", "divide-y-width");
-        map.insert("divide-", "divide-style");
+    for (i, &class) in sorted_classes.iter().enumerate() {
+        if is_tailwind_class(class) {
+            if seen_classes.contains(class) {
+                // This is a duplicate, mark it for removal
+                removed_indices.insert(i);
+            } else {
+                // First occurrence, keep it
+                seen_classes.insert(class);
+                result.push(class);
+            }
+        } else {
+            // Always keep non-Tailwind classes
+            result.push(class);
+        }
+    }
 
-        // Accessibility
-        map.insert("sr-only", "position");
-        map.insert("not-sr-only", "position");
+    (result, removed_indices)
+}
 
-        // User select
-        map.insert("select-", "user-select");
+fn sort_with_preserved_whitespace(
+    class_string: &str,
+    sorted_classes: &[&str],
+    removed_indices: &HashSet<usize>,
+) -> String {
+    // Determine if the string starts with whitespace
+    let starts_with_whitespace = class_string
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_whitespace());
 
-        // Isolation
-        map.insert("isolate", "isolation");
-        map.insert("isolation-", "isolation");
+    // Parse the original input into alternating whitespace and class tokens
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_whitespace = starts_with_whitespace; // Start based on the first character
+    let mut bracket_depth = 0;
+    let mut paren_depth = 0;
 
-        // Overflow/Scroll
-        map.insert("overflow-", "overflow");
-        map.insert("overscroll-", "overscroll-behavior");
-        map.insert("scroll-", "scroll-behavior");
+    for c in class_string.chars() {
+        // Update bracket and parenthesis depth
+        match c {
+            '[' => bracket_depth += 1,
+            ']' => {
+                if bracket_depth > 0 {
+                    bracket_depth -= 1
+                }
+            }
+            '(' => paren_depth += 1,
+            ')' => {
+                if paren_depth > 0 {
+                    paren_depth -= 1
+                }
+            }
+            _ => {}
+        }
 
-        // Resize
-        map.insert("resize", "resize");
-        map.insert("resize-", "resize");
+        let is_whitespace = c.is_whitespace() && bracket_depth == 0 && paren_depth == 0;
 
-        // Border radius - handle all variants
-        map.insert("rounded", "border-radius");
-        map.insert("rounded-", "border-radius");
+        if is_whitespace != in_whitespace {
+            // We're switching between whitespace and class content
+            if !current.is_empty() {
+                tokens.push((current, in_whitespace));
+                current = String::new();
+            }
+            in_whitespace = is_whitespace;
+        }
 
-        // Top
-        map.insert("rounded-t", "border-top-radius");
-        map.insert("rounded-t-", "border-top-radius");
+        current.push(c);
+    }
 
-        // Right
-        map.insert("rounded-r", "border-right-radius");
-        map.insert("rounded-r-", "border-right-radius");
+    // Add the last token
+    if !current.is_empty() {
+        tokens.push((current, in_whitespace));
+    }
 
-        // Bottom
-        map.insert("rounded-b", "border-bottom-radius");
-        map.insert("rounded-b-", "border-bottom-radius");
+    // Extract class and whitespace tokens
+    let mut whitespace_tokens: Vec<String> = Vec::new();
+    let mut original_classes: Vec<String> = Vec::new();
 
-        // Left
-        map.insert("rounded-l", "border-left-radius");
-        map.insert("rounded-l-", "border-left-radius");
+    for (text, is_whitespace) in tokens {
+        if is_whitespace {
+            whitespace_tokens.push(text);
+        } else {
+            original_classes.push(text);
+        }
+    }
 
-        // Corners
-        map.insert("rounded-tl", "border-top-left-radius");
-        map.insert("rounded-tl-", "border-top-left-radius");
-        map.insert("rounded-tr", "border-top-right-radius");
-        map.insert("rounded-tr-", "border-top-right-radius");
-        map.insert("rounded-br", "border-bottom-right-radius");
-        map.insert("rounded-br-", "border-bottom-right-radius");
-        map.insert("rounded-bl", "border-bottom-left-radius");
-        map.insert("rounded-bl-", "border-bottom-left-radius");
+    // Filter out whitespace associated with removed classes
+    let filtered_whitespace: Vec<String> = if !removed_indices.is_empty() {
+        whitespace_tokens
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                // Which class is after this whitespace?
+                let class_index = if starts_with_whitespace {
+                    *i // If string starts with whitespace, whitespace[i] is before class[i]
+                } else {
+                    *i + 1 // Otherwise, whitespace[i] is before class[i+1]
+                };
+                !removed_indices.contains(&class_index)
+            })
+            .map(|(_, ws)| ws)
+            .collect()
+    } else {
+        whitespace_tokens
+    };
 
-        // Logical properties (Tailwind v3+)
-        map.insert("rounded-s", "border-start-radius");
-        map.insert("rounded-s-", "border-start-radius");
-        map.insert("rounded-e", "border-end-radius");
-        map.insert("rounded-e-", "border-end-radius");
-        map.insert("rounded-ss", "border-start-start-radius");
-        map.insert("rounded-ss-", "border-start-start-radius");
-        map.insert("rounded-se", "border-start-end-radius");
-        map.insert("rounded-se-", "border-start-end-radius");
-        map.insert("rounded-ee", "border-end-end-radius");
-        map.insert("rounded-ee-", "border-end-end-radius");
-        map.insert("rounded-es", "border-end-start-radius");
-        map.insert("rounded-es-", "border-end-start-radius");
+    // Rebuild the string
+    let mut output = String::new();
 
-        // Border
-        map.insert("border", "border-width");
-        map.insert("border-", "border-width");
-        map.insert("border-t", "border-top-width");
-        map.insert("border-t-", "border-top-width");
-        map.insert("border-r", "border-right-width");
-        map.insert("border-r-", "border-right-width");
-        map.insert("border-b", "border-bottom-width");
-        map.insert("border-b-", "border-bottom-width");
-        map.insert("border-l", "border-left-width");
-        map.insert("border-l-", "border-left-width");
+    // If the string starts with whitespace, add that first
+    if starts_with_whitespace && !filtered_whitespace.is_empty() {
+        output.push_str(&filtered_whitespace[0]);
+    }
 
-        // Border style
-        map.insert("border-solid", "border-style");
-        map.insert("border-dashed", "border-style");
-        map.insert("border-dotted", "border-style");
-        map.insert("border-double", "border-style");
-        map.insert("border-hidden", "border-style");
-        map.insert("border-none", "border-style");
+    // Add each class with its following whitespace
+    for (i, class) in sorted_classes.iter().enumerate() {
+        // Add the class
+        output.push_str(class);
 
-        // Border collapse
-        map.insert("border-collapse", "border-collapse");
-        map.insert("border-separate", "border-collapse");
+        // Find the index for whitespace - if string starts with whitespace,
+        // we need to offset our index for the filtered whitespace tokens
+        let whitespace_index = if starts_with_whitespace { i + 1 } else { i };
 
-        // Background
-        map.insert("bg-", "background-color");
-        map.insert("bg-gradient-", "background-image");
-        map.insert("bg-clip-", "background-clip");
-        map.insert("bg-origin-", "background-origin");
-        map.insert("bg-repeat", "background-repeat");
-        map.insert("bg-repeat-", "background-repeat");
-        map.insert("bg-fixed", "background-attachment");
-        map.insert("bg-local", "background-attachment");
-        map.insert("bg-scroll", "background-attachment");
+        // Add whitespace if not the last class
+        if i < sorted_classes.len() - 1 && whitespace_index < filtered_whitespace.len() {
+            output.push_str(&filtered_whitespace[whitespace_index]);
+        }
+    }
 
-        // Object
-        map.insert("object-", "object-fit");
-        map.insert("object-position-", "object-position");
+    // Add trailing whitespace if present
+    let last_whitespace_index = if starts_with_whitespace {
+        sorted_classes.len()
+    } else {
+        sorted_classes.len() - 1
+    };
+    if last_whitespace_index < filtered_whitespace.len() {
+        output.push_str(&filtered_whitespace[last_whitespace_index]);
+    }
 
-        // Typography
-        map.insert("font-", "font-family");
-        map.insert("text-", "color");
-        map.insert("tracking-", "letter-spacing");
-        map.insert("leading-", "line-height");
-        map.insert("whitespace-", "white-space");
-        map.insert("break-", "word-break");
-        map.insert("truncate", "text-overflow");
-        map.insert("hyphens-", "hyphens");
-
-        // Font style/weight
-        map.insert("italic", "font-style");
-        map.insert("not-italic", "font-style");
-        map.insert("font-thin", "font-weight");
-        map.insert("font-extralight", "font-weight");
-        map.insert("font-light", "font-weight");
-        map.insert("font-normal", "font-weight");
-        map.insert("font-medium", "font-weight");
-        map.insert("font-semibold", "font-weight");
-        map.insert("font-bold", "font-weight");
-        map.insert("font-extrabold", "font-weight");
-        map.insert("font-black", "font-weight");
-
-        // Text transform
-        map.insert("uppercase", "text-transform");
-        map.insert("lowercase", "text-transform");
-        map.insert("capitalize", "text-transform");
-        map.insert("normal-case", "text-transform");
-
-        // Text decoration
-        map.insert("underline", "text-decoration-line");
-        map.insert("overline", "text-decoration-line");
-        map.insert("line-through", "text-decoration-line");
-        map.insert("no-underline", "text-decoration-line");
-        map.insert("decoration-", "text-decoration");
-
-        // Text alignment
-        map.insert("text-left", "text-align");
-        map.insert("text-center", "text-align");
-        map.insert("text-right", "text-align");
-        map.insert("text-justify", "text-align");
-        map.insert("text-start", "text-align");
-        map.insert("text-end", "text-align");
-
-        // Placeholder color
-        map.insert("placeholder-", "placeholder-color");
-
-        // Caret/Accent colors
-        map.insert("caret-", "caret-color");
-        map.insert("accent-", "accent-color");
-
-        // Effects
-        map.insert("shadow", "box-shadow");
-        map.insert("shadow-", "box-shadow");
-        map.insert("opacity-", "opacity");
-        map.insert("mix-blend-", "mix-blend-mode");
-        map.insert("bg-blend-", "background-blend-mode");
-
-        // Transitions
-        map.insert("transition", "transition-property");
-        map.insert("transition-", "transition-property");
-        map.insert("duration-", "transition-duration");
-        map.insert("ease-", "transition-timing-function");
-        map.insert("delay-", "transition-delay");
-
-        // Transforms
-        map.insert("origin-", "transform-origin");
-        map.insert("scale-", "scale");
-        map.insert("rotate-", "rotate");
-        map.insert("translate-", "translate");
-        map.insert("skew-", "skew");
-        map.insert("transform", "transform");
-        map.insert("transform-", "transform");
-
-        // Filters
-        map.insert("blur", "--tw-blur");
-        map.insert("blur-", "--tw-blur");
-        map.insert("brightness", "--tw-brightness");
-        map.insert("brightness-", "--tw-brightness");
-        map.insert("contrast", "--tw-contrast");
-        map.insert("contrast-", "--tw-contrast");
-        map.insert("grayscale", "--tw-grayscale");
-        map.insert("grayscale-", "--tw-grayscale");
-        map.insert("hue-rotate", "--tw-hue-rotate");
-        map.insert("hue-rotate-", "--tw-hue-rotate");
-        map.insert("invert", "--tw-invert");
-        map.insert("invert-", "--tw-invert");
-        map.insert("saturate", "--tw-saturate");
-        map.insert("saturate-", "--tw-saturate");
-        map.insert("sepia", "--tw-sepia");
-        map.insert("sepia-", "--tw-sepia");
-        map.insert("drop-shadow", "--tw-drop-shadow");
-        map.insert("drop-shadow-", "--tw-drop-shadow");
-        map.insert("filter", "filter");
-        map.insert("filter-", "filter");
-
-        // Backdrop filters
-        map.insert("backdrop-blur", "--tw-backdrop-blur");
-        map.insert("backdrop-blur-", "--tw-backdrop-blur");
-        map.insert("backdrop-brightness", "--tw-backdrop-brightness");
-        map.insert("backdrop-brightness-", "--tw-backdrop-brightness");
-        map.insert("backdrop-contrast", "--tw-backdrop-contrast");
-        map.insert("backdrop-contrast-", "--tw-backdrop-contrast");
-        map.insert("backdrop-grayscale", "--tw-backdrop-grayscale");
-        map.insert("backdrop-grayscale-", "--tw-backdrop-grayscale");
-        map.insert("backdrop-hue-rotate", "--tw-backdrop-hue-rotate");
-        map.insert("backdrop-hue-rotate-", "--tw-backdrop-hue-rotate");
-        map.insert("backdrop-invert", "--tw-backdrop-invert");
-        map.insert("backdrop-invert-", "--tw-backdrop-invert");
-        map.insert("backdrop-opacity", "--tw-backdrop-opacity");
-        map.insert("backdrop-opacity-", "--tw-backdrop-opacity");
-        map.insert("backdrop-saturate", "--tw-backdrop-saturate");
-        map.insert("backdrop-saturate-", "--tw-backdrop-saturate");
-        map.insert("backdrop-sepia", "--tw-backdrop-sepia");
-        map.insert("backdrop-sepia-", "--tw-backdrop-sepia");
-        map.insert("backdrop-filter", "backdrop-filter");
-        map.insert("backdrop-filter-", "backdrop-filter");
-
-        // Ring
-        map.insert("ring", "--tw-ring-shadow");
-        map.insert("ring-", "--tw-ring-color");
-        map.insert("ring-offset", "--tw-ring-offset-width");
-        map.insert("ring-offset-", "--tw-ring-offset-color");
-        map.insert("ring-inset", "--tw-ring-inset");
-
-        // Outline
-        map.insert("outline", "outline");
-        map.insert("outline-", "outline");
-        map.insert("outline-offset-", "outline-offset");
-        map.insert("outline-none", "outline");
-
-        // Special
-        map.insert("container", "--tw-container-component");
-        map.insert("animate", "animation");
-        map.insert("animate-", "animation");
-
-        // Group and Peer (parasite utilities)
-        map.insert("group", "display"); // Not exactly display, but close enough for ordering
-        map.insert("peer", "display"); // Not exactly display, but close enough for ordering
-
-        // SVG
-        map.insert("fill-", "fill");
-        map.insert("stroke-", "stroke");
-        map.insert("stroke-width-", "stroke-width");
-
-        // Tables
-        map.insert("table-", "table-layout");
-
-        // Will-change
-        map.insert("will-change-", "will-change");
-
-        // Screen readers
-        map.insert("sr-", "position");
-
-        map
-    })
+    output
 }
 
 /// Main function to sort Tailwind classes
 pub fn sort_classes(class_string: &str) -> String {
-    // Special case for empty string
+    // Handle empty strings
+    if class_string.is_empty() {
+        return String::new();
+    }
+
+    // Check if this is a whitespace-only string
+    if class_string.chars().all(|c| c.is_whitespace()) {
+        // If normalization is enabled, return a single space
+        if is_normalize_whitespace_enabled() {
+            return " ".to_string();
+        }
+        // Otherwise preserve the original whitespace
+        return class_string.to_string();
+    }
+
+    // Special case for strings that are empty when trimmed but not just whitespace
     if class_string.trim().is_empty() {
         return class_string.to_string();
     }
@@ -706,57 +320,102 @@ pub fn sort_classes(class_string: &str) -> String {
     // Don't sort class attributes containing `{{`, to match Prettier behavior
     if class_string.contains("{{") {
         if is_debug_enabled() {
-            crate::debug_log!("Not sorting classes containing '{{': {}", class_string);
+            debug_log!("Not sorting classes containing '{{': {}", class_string);
         }
         return class_string.to_string();
     }
 
-    let classes: Vec<&str> = class_string.split_whitespace().collect();
+    // Split the class string properly to handle spaces in arbitrary values
+    let classes = split_preserving_brackets(class_string);
 
     // Handle ellipsis special case
-    let has_ellipsis = classes.iter().any(|&c| c == "..." || c == "…");
+    let has_ellipsis = classes.iter().any(|&c| c == "...");
+    let has_unicode_ellipsis = classes.iter().any(|&c| c == "…");
     let classes_without_ellipsis: Vec<&str> = classes
         .iter()
         .filter(|&&c| c != "..." && c != "…")
         .copied()
         .collect();
 
-    // If duplicates should be removed, do it
-    let mutex = REMOVE_DUPLICATES.get_or_init(|| Mutex::new(true));
-    let remove_duplicates_flag = mutex.lock().map(|guard| *guard).unwrap_or(true);
+    // Sort the classes
+    let sorted_classes = sort_tailwind_classes(&classes_without_ellipsis);
 
-    let filtered_classes = if remove_duplicates_flag {
-        remove_duplicates(&classes_without_ellipsis)
+    // If enabled, remove duplicates from the sorted list
+    let (final_classes, removed_indices) = if is_remove_duplicates_enabled() {
+        remove_duplicates_from_sorted(&sorted_classes)
     } else {
-        classes_without_ellipsis
+        (sorted_classes, HashSet::new())
     };
 
-    // Process the Tailwind classes according to their categories
-    let ordered_classes = sort_tailwind_classes(&filtered_classes);
-
-    // Build final result - add ellipsis at the end if it existed
-    let mut result = ordered_classes;
+    // Add ellipsis at the end if it existed
+    let mut result = final_classes;
     if has_ellipsis {
         result.push("...");
+    } else if has_unicode_ellipsis {
+        result.push("…");
     }
 
     if is_debug_enabled() {
-        crate::debug_log!("Original: {}", class_string);
-        crate::debug_log!("Sorted:   {}", result.join(" "));
+        debug_log!("Original: {}", class_string);
+        debug_log!("Sorted:   {}", result.join(" "));
     }
 
-    result.join(" ")
+    // Normalize whitespace if enabled
+    if is_normalize_whitespace_enabled() {
+        result.join(" ")
+    } else {
+        // Preserve whitespace and handle duplicates
+        sort_with_preserved_whitespace(class_string, &result, &removed_indices)
+    }
 }
 
-/// Sort Tailwind classes according to their position in CSS output
+/// Sort Tailwind classes by their CSS property order
 fn sort_tailwind_classes<'a>(classes: &[&'a str]) -> Vec<&'a str> {
     // Separate classes by type
-    let (custom_classes, tailwind_classes): (Vec<&str>, Vec<&str>) = classes
-        .iter()
-        .copied()
-        .partition(|&c| !is_tailwind_class(c));
+    let mut custom_classes = Vec::new();
+    let mut arbitrary_without_colon = Vec::new();
+    let mut arbitrary_unknown_with_colon = Vec::new();
+    let mut tailwind_classes = Vec::new();
 
-    // Extract container class
+    for &class in classes {
+        // Handle fully arbitrary properties
+        if (class.starts_with('[') && class.ends_with(']'))
+            || (class.starts_with('(') && class.ends_with(')'))
+        {
+            let content = extract_arbitrary_attribute(class);
+            if content.contains(':') {
+                // Arbitrary with colon - check if it matches a known property
+                let colon_idx = content.find(':').unwrap();
+                let prop_name = &content[0..colon_idx];
+
+                // Check if it's a recognized CSS property directly
+                if find_order(prop_name) < 1000 {
+                    // Any order less than 1000 is a known property
+                    tailwind_classes.push(class);
+                } else {
+                    // Unknown property with colon, add to separate list for end placement
+                    arbitrary_unknown_with_colon.push(class);
+                }
+            } else {
+                // Arbitrary without colon - add with custom classes
+                arbitrary_without_colon.push(class);
+            }
+        }
+        // Handle all other classes
+        else if is_tailwind_class(class) {
+            tailwind_classes.push(class);
+        } else {
+            custom_classes.push(class);
+        }
+    }
+
+    // Sort arbitrary without colon alphabetically
+    arbitrary_without_colon.sort();
+
+    // Sort unknown arbitrary with colon alphabetically
+    arbitrary_unknown_with_colon.sort();
+
+    // Process the remaining Tailwind classes
     let (container_class, remaining_tailwind): (Vec<&str>, Vec<&str>) = tailwind_classes
         .iter()
         .copied()
@@ -766,77 +425,129 @@ fn sort_tailwind_classes<'a>(classes: &[&'a str]) -> Vec<&'a str> {
     let (parasite_utilities, non_parasite): (Vec<&str>, Vec<&str>) = remaining_tailwind
         .iter()
         .copied()
-        .partition(|&c| is_parasite_utility(c));
+        .partition(|&c| c == "group" || c == "peer");
 
+    // Split variants (those with :) from base utilities
     let (variants, base_utilities): (Vec<&str>, Vec<&str>) =
-        non_parasite.iter().copied().partition(|&c| has_variant(c));
+        non_parasite.iter().copied().partition(|&c| is_variant(c));
 
+    // Split responsive variants from state variants
     let (responsive_variants, state_variants): (Vec<&str>, Vec<&str>) =
         variants.iter().copied().partition(|&c| {
             let (variant, _) = split_variant(c);
-            is_responsive_variant(variant)
+            ["sm:", "md:", "lg:", "xl:", "2xl:"].contains(&variant)
         });
 
-    // Sort each category
-    let sorted_base = sort_base_utilities(&base_utilities);
+    // Sort the various categories
+    let sorted_base = sort_basic_utilities(&base_utilities);
     let sorted_state = sort_state_variants(&state_variants);
     let sorted_responsive = sort_responsive_variants(&responsive_variants);
 
     // Combine all sorted categories in the correct order
     let mut result = Vec::new();
-    result.extend(custom_classes);
-    result.extend(container_class);
-    result.extend(parasite_utilities);
-    result.extend(sorted_base);
-    result.extend(sorted_state);
-    result.extend(sorted_responsive);
+    result.extend(custom_classes); // Custom classes
+    result.extend(arbitrary_without_colon); // Arbitrary without colons (alphabetical)
+    result.extend(container_class); // Container
+    result.extend(parasite_utilities); // Parasite utilities
+    result.extend(sorted_base); // Base utilities (including matching arbitrary properties)
+    result.extend(sorted_state); // State variants
+    result.extend(sorted_responsive); // Responsive variants
+    result.extend(arbitrary_unknown_with_colon); // Unknown arbitrary with colons
 
     result
 }
 
-/// Sort base utilities by their position in Tailwind's CSS output
-fn sort_base_utilities<'a>(utilities: &[&'a str]) -> Vec<&'a str> {
-    let mut utilities_with_order: Vec<(&str, usize)> = utilities
-        .iter()
-        .map(|&class| (class, get_property_order(class)))
-        .collect();
+/// Sort basic utilities (including arbitrary values)
+fn sort_basic_utilities<'a>(base_utilities: &[&'a str]) -> Vec<&'a str> {
+    let mut utilities_with_order: Vec<(&'a str, usize, String, bool, String)> = Vec::new();
 
-    // Sort by the determined CSS property order
-    utilities_with_order.sort_by_key(|&(_, order)| order);
+    // Get property order for each utility
+    for &class in base_utilities {
+        let (order, sub_prop, is_negative, value) = get_property_order(class);
+        utilities_with_order.push((class, order, sub_prop, is_negative, value));
+    }
 
-    // Extract just the class names now that they're sorted
+    // Sort by property order, then sub-property, then negative status, then value
+    utilities_with_order.sort_by(
+        |&(_, order_a, ref sub_a, neg_a, ref val_a), &(_, order_b, ref sub_b, neg_b, ref val_b)| {
+            // Property order
+            match order_a.cmp(&order_b) {
+                std::cmp::Ordering::Equal => {
+                    // Sub-property
+                    match sub_a.cmp(sub_b) {
+                        std::cmp::Ordering::Equal => {
+                            // Negative status (negative first)
+                            match neg_b.cmp(&neg_a) {
+                                std::cmp::Ordering::Equal => {
+                                    // Value
+                                    val_a.cmp(val_b)
+                                }
+                                other => other,
+                            }
+                        }
+                        other => other,
+                    }
+                }
+                other => other,
+            }
+        },
+    );
+
+    // Extract just the class names
     utilities_with_order
         .into_iter()
-        .map(|(class, _)| class)
+        .map(|(class, _, _, _, _)| class)
         .collect()
 }
 
-/// Sort state variants
+/// Sort state variants (hover:, focus:, etc.)
 fn sort_state_variants<'a>(variants: &[&'a str]) -> Vec<&'a str> {
-    // Group variants by their prefix (hover:, focus:, etc.)
-    let mut grouped: HashMap<&str, Vec<&str>> = HashMap::new();
+    // Group variants by their base prefix (hover:, focus:, etc.)
+    let mut grouped: HashMap<&str, Vec<&'a str>> = HashMap::new();
 
     for &class in variants {
         let (variant, _) = split_variant(class);
         grouped.entry(variant).or_default().push(class);
     }
 
-    // Sort variant groups by priority
-    let mut variant_prefixes: Vec<(&str, usize)> = grouped
+    let mut variant_groups: Vec<(&str, usize)> = grouped
         .keys()
         .map(|&prefix| (prefix, get_state_variant_order(prefix)))
         .collect();
-    variant_prefixes.sort_by_key(|&(_, order)| order);
 
-    // Build final sorted list
+    // Sort by state variant order (hover before focus, etc.)
+    variant_groups.sort_by_key(|&(_, order)| order);
+
     let mut result = Vec::new();
-    for (prefix, _) in variant_prefixes {
+
+    for (prefix, _) in variant_groups {
         if let Some(classes) = grouped.get(prefix) {
-            // Sort classes within each variant group
+            // Sort classes within this variant group by their base class order
             let mut variant_classes = classes.to_vec();
-            variant_classes.sort_by_key(|&class| {
-                let (_, base) = split_variant(class);
-                get_property_order(base)
+
+            variant_classes.sort_by(|&a, &b| {
+                let (_, a_base) = split_variant(a);
+                let (_, b_base) = split_variant(b);
+
+                let (a_order, a_sub, a_neg, a_val) = get_property_order(a_base);
+                let (b_order, b_sub, b_neg, b_val) = get_property_order(b_base);
+
+                // Sort by property order, then sub-property, then negative status, then value
+                match a_order.cmp(&b_order) {
+                    std::cmp::Ordering::Equal => {
+                        match a_sub.cmp(&b_sub) {
+                            std::cmp::Ordering::Equal => {
+                                match b_neg.cmp(&a_neg) {
+                                    // Negative comes first
+                                    std::cmp::Ordering::Equal => a_val.cmp(&b_val),
+                                    other => other,
+                                }
+                            }
+                            other => other,
+                        }
+                    }
+                    other => other,
+                }
             });
 
             result.extend(variant_classes);
@@ -846,32 +557,54 @@ fn sort_state_variants<'a>(variants: &[&'a str]) -> Vec<&'a str> {
     result
 }
 
-/// Sort responsive variants
+/// Sort responsive variants (sm:, md:, lg:, etc.)
 fn sort_responsive_variants<'a>(variants: &[&'a str]) -> Vec<&'a str> {
-    // Group variants by their prefix (sm:, md:, etc.)
-    let mut grouped: HashMap<&str, Vec<&str>> = HashMap::new();
+    // Group variants by their base prefix (sm:, md:, etc.)
+    let mut grouped: HashMap<&str, Vec<&'a str>> = HashMap::new();
 
     for &class in variants {
         let (variant, _) = split_variant(class);
         grouped.entry(variant).or_default().push(class);
     }
 
-    // Sort variant groups by screen size
-    let mut variant_prefixes: Vec<(&str, usize)> = grouped
+    let mut variant_groups: Vec<(&str, usize)> = grouped
         .keys()
         .map(|&prefix| (prefix, get_responsive_variant_order(prefix)))
         .collect();
-    variant_prefixes.sort_by_key(|&(_, order)| order);
 
-    // Build final sorted list
+    // Sort by responsive variant order (sm before md, etc.)
+    variant_groups.sort_by_key(|&(_, order)| order);
+
     let mut result = Vec::new();
-    for (prefix, _) in variant_prefixes {
+
+    for (prefix, _) in variant_groups {
         if let Some(classes) = grouped.get(prefix) {
-            // Sort classes within each variant group
+            // Sort classes within this variant group by their base class order
             let mut variant_classes = classes.to_vec();
-            variant_classes.sort_by_key(|&class| {
-                let (_, base) = split_variant(class);
-                get_property_order(base)
+
+            variant_classes.sort_by(|&a, &b| {
+                let (_, a_base) = split_variant(a);
+                let (_, b_base) = split_variant(b);
+
+                let (a_order, a_sub, a_neg, a_val) = get_property_order(a_base);
+                let (b_order, b_sub, b_neg, b_val) = get_property_order(b_base);
+
+                // Sort by property order, then sub-property, then negative status, then value
+                match a_order.cmp(&b_order) {
+                    std::cmp::Ordering::Equal => {
+                        match a_sub.cmp(&b_sub) {
+                            std::cmp::Ordering::Equal => {
+                                match b_neg.cmp(&a_neg) {
+                                    // Negative comes first
+                                    std::cmp::Ordering::Equal => a_val.cmp(&b_val),
+                                    other => other,
+                                }
+                            }
+                            other => other,
+                        }
+                    }
+                    other => other,
+                }
             });
 
             result.extend(variant_classes);
@@ -881,73 +614,183 @@ fn sort_responsive_variants<'a>(variants: &[&'a str]) -> Vec<&'a str> {
     result
 }
 
-/// Get the ordering value for a utility class based on PROPERTY_ORDER
-fn get_property_order(class: &str) -> usize {
-    // Special cases first
+/// Split a class into variant and base parts
+fn split_variant(class: &str) -> (&str, &str) {
+    if let Some(pos) = class.find(':') {
+        (&class[0..=pos], &class[pos + 1..])
+    } else {
+        ("", class)
+    }
+}
+
+/// Get CSS property order information for a class
+fn get_property_order(class: &str) -> (usize, String, bool, String) {
+    // Handle special case for ellipsis
     if class == "..." || class == "…" {
-        return usize::MAX; // Always at the end
+        return (usize::MAX, String::new(), false, String::new());
     }
 
-    if class == "container" {
-        return *get_property_order_map()
-            .get("--tw-container-component")
-            .unwrap_or(&1000);
-    }
+    // Handle negative values
+    let is_negative = class.starts_with('-') && !class.starts_with("--");
+    let lookup_class = if is_negative { &class[1..] } else { class };
 
-    // First check if the exact class is in the property map
-    if let Some(&property) = get_tailwind_property_map().get(class) {
-        if let Some(&order) = get_property_order_map().get(property) {
-            return order;
+    // Handle arbitrary values: both prefixed arbitrary values (bg-[red]) and full arbitrary properties ([color:red])
+    if is_arbitrary_class(lookup_class) {
+        // Full arbitrary property like "[margin:5px]"
+        if (lookup_class.starts_with('[') && lookup_class.contains(':'))
+            || (lookup_class.starts_with('(') && lookup_class.contains(':'))
+        {
+            let content = extract_arbitrary_attribute(lookup_class);
+            let colon_idx = content.find(':').unwrap();
+            let prop_name = &content[0..colon_idx];
+
+            let order = find_order(prop_name);
+            return (
+                order,
+                String::new(),
+                is_negative,
+                content[colon_idx + 1..].to_string(),
+            );
         }
+
+        // Prefixed arbitrary value like "bg-[red]"
+        // Check if this is a prefixed arbitrary value
+        for format in &["[", "("] {
+            if let Some(prefix_end) = lookup_class.find(format) {
+                let prefix = &lookup_class[0..prefix_end];
+
+                if !prefix.is_empty() {
+                    // This is a prefixed arbitrary value
+                    let matching_prefixes: Vec<&TailwindPrefix> = get_tailwind_prefixes()
+                        .iter()
+                        .filter(|p| !p.is_standalone && prefix.starts_with(p.prefix))
+                        .collect();
+
+                    // Try to find an exact prefix match
+                    if let Some(prefix_info) =
+                        matching_prefixes.iter().find(|&&p| p.prefix == prefix)
+                    {
+                        return (
+                            prefix_info.order,
+                            String::new(),
+                            is_negative,
+                            class.to_string(),
+                        );
+                    }
+
+                    // Then try prefixes by length (most specific first)
+                    let mut sorted_prefixes = matching_prefixes.clone();
+                    sorted_prefixes.sort_by_key(|p| -(p.prefix.len() as isize));
+
+                    if let Some(prefix_info) = sorted_prefixes.first() {
+                        return (
+                            prefix_info.order,
+                            String::new(),
+                            is_negative,
+                            class.to_string(),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Default for unknown arbitrary properties
+        return (1000, String::new(), is_negative, lookup_class.to_string());
     }
 
-    // Get the base class name without arbitrary values
-    let base_class = if class.contains('[') {
-        class.split('[').next().unwrap_or(class)
-    } else if class.contains('(') {
-        class.split('(').next().unwrap_or(class)
+    // Find matching prefix for non-arbitrary classes
+    if let Some(prefix) = find_matching_prefix(lookup_class) {
+        // Extract the value part
+        let mut sub_property = String::new();
+        let mut value = String::new();
+
+        if !prefix.is_standalone && prefix.prefix.ends_with('-') {
+            let base_class = if lookup_class.contains(':') {
+                lookup_class.split(':').last().unwrap_or(lookup_class)
+            } else {
+                lookup_class
+            };
+
+            if base_class.len() > prefix.prefix.len() {
+                let value_part = &base_class[prefix.prefix.len()..];
+
+                // Try to extract sub-property and value (e.g., from translate-x-4, get x and 4)
+                if let Some(dash_pos) = value_part.find('-') {
+                    sub_property = value_part[..dash_pos].to_string();
+                    value = value_part[dash_pos + 1..].to_string();
+                } else {
+                    value = value_part.to_string();
+                }
+            }
+        }
+
+        return (prefix.order, sub_property, is_negative, value);
+    }
+
+    // Default for unknown classes
+    (1000, String::new(), is_negative, class.to_string())
+}
+
+/// Find matching Tailwind prefix for a class
+fn find_matching_prefix(class: &str) -> Option<&'static TailwindPrefix> {
+    // Extract base class without variants
+    let base_class = if class.contains(':') {
+        class.split(':').last().unwrap_or(class)
     } else {
         class
     };
 
-    // Find all matching prefixes, then choose the most specific one
-    let mut matches: Vec<(&str, &str)> = get_tailwind_property_map()
+    // Handle container special case
+    if base_class == "container" {
+        return get_tailwind_prefixes()
+            .iter()
+            .find(|&p| p.prefix == "container");
+    }
+
+    // Handle arbitrary values
+    if base_class.contains('[') || base_class.contains('(') {
+        return None;
+    }
+
+    // Check for standalone utilities (exact matches)
+    if let Some(prefix) = get_tailwind_prefixes()
         .iter()
-        .filter(|&(prefix, _)| base_class == *prefix || base_class.starts_with(prefix))
-        .map(|(&prefix, &property)| (prefix, property))
+        .find(|&p| p.is_standalone && p.prefix == base_class)
+    {
+        return Some(prefix);
+    }
+
+    // Check for prefixed utilities
+    let mut matches: Vec<&'static TailwindPrefix> = get_tailwind_prefixes()
+        .iter()
+        .filter(|&p| !p.is_standalone && base_class.starts_with(p.prefix))
         .collect();
 
     // Sort by prefix length (descending) to find most specific match
-    matches.sort_by_key(|(prefix, _)| -(prefix.len() as isize));
+    matches.sort_by_key(|p| -(p.prefix.len() as isize));
 
-    if let Some((_, property)) = matches.first() {
-        if let Some(&order) = get_property_order_map().get(property) {
-            return order;
+    // Try to find the longest match where the value is valid
+    if let Some(longest_prefix) = matches.first() {
+        let longest_len = longest_prefix.prefix.len();
+        let value_part = if base_class.len() > longest_len {
+            &base_class[longest_len..]
+        } else {
+            ""
+        };
+
+        // Check all prefixes of the same length and find one that accepts the value
+        for &prefix in matches.iter() {
+            if prefix.prefix.len() == longest_len && is_valid_value_for_prefix(prefix, value_part) {
+                return Some(prefix);
+            }
         }
     }
 
-    // For unknown utilities, try to match by general category
-    if base_class.starts_with("bg-") {
-        return *get_property_order_map()
-            .get("background-color")
-            .unwrap_or(&1000);
-    } else if base_class.starts_with("text-") {
-        return *get_property_order_map().get("color").unwrap_or(&1000);
-    } else if base_class.starts_with("border") {
-        return *get_property_order_map()
-            .get("border-width")
-            .unwrap_or(&1000);
-    } else if base_class.starts_with("pointer-events-") {
-        return *get_property_order_map().get("pointer-events").unwrap_or(&1);
-    } else if base_class.starts_with("opacity-") {
-        return *get_property_order_map().get("opacity").unwrap_or(&241);
-    }
-
-    // Default order for unknown classes
-    1000
+    // Fall back to the longest match if no valid prefix was found
+    matches.into_iter().next()
 }
 
-/// Get ordering value for state variants
+/// Get state variant order for sorting
 fn get_state_variant_order(variant: &str) -> usize {
     match variant {
         "hover:" => 100,
@@ -972,7 +815,7 @@ fn get_state_variant_order(variant: &str) -> usize {
     }
 }
 
-/// Get ordering value for responsive variants
+/// Get responsive variant order for sorting
 fn get_responsive_variant_order(variant: &str) -> usize {
     match variant {
         "sm:" => 100,
@@ -984,81 +827,178 @@ fn get_responsive_variant_order(variant: &str) -> usize {
     }
 }
 
-/// Check if a class is a "parasite utility"
-fn is_parasite_utility(class: &str) -> bool {
-    class == "group" || class == "peer"
-}
-
-/// Check if a class has a variant prefix
-fn has_variant(class: &str) -> bool {
-    class.contains(':')
-}
-
-/// Split a class into its variant and base parts
-fn split_variant(class: &str) -> (&str, &str) {
-    if let Some(pos) = class.find(':') {
-        (&class[0..=pos], &class[pos + 1..])
-    } else {
-        ("", class)
+/// Check if a value is valid for a given prefix
+fn is_valid_value_for_prefix(prefix: &TailwindPrefix, value: &str) -> bool {
+    // For standalone utilities (like "flex"), the value should be empty
+    if prefix.is_standalone {
+        return value.is_empty();
     }
+
+    // Check the list of allowed values first
+    if prefix.allowed_values.contains(&value) {
+        return true;
+    }
+
+    // Then check for value types
+    for &value_type in prefix.value_types {
+        match value_type {
+            ValueType::None => {
+                // None type means no value is needed
+                return value.is_empty();
+            }
+            ValueType::Number => {
+                // Check if value is a number (integer or decimal)
+                if value.parse::<f64>().is_ok() {
+                    return true;
+                }
+            }
+            ValueType::Fraction => {
+                // Check for fraction format (e.g., 1/2, 2/3)
+                if value.contains('/') {
+                    let parts: Vec<&str> = value.split('/').collect();
+                    if parts.len() == 2
+                        && parts[0].parse::<f64>().is_ok()
+                        && parts[1].parse::<f64>().is_ok()
+                    {
+                        return true;
+                    }
+                }
+            }
+            ValueType::Color => {
+                // Check for basic colors
+                if ["white", "black", "transparent", "current", "inherit"].contains(&value) {
+                    return true;
+                }
+            }
+            ValueType::ColorPalette => {
+                // Check for color-number pattern (e.g., red-500)
+                let parts: Vec<&str> = value.split('-').collect();
+                if parts.len() == 2 {
+                    let color = parts[0];
+                    let number = parts[1];
+
+                    if [
+                        "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber",
+                        "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue",
+                        "indigo", "violet", "purple", "fuchsia", "pink", "rose",
+                    ]
+                    .contains(&color)
+                        && number.parse::<usize>().is_ok()
+                    {
+                        return true;
+                    }
+                }
+            }
+            ValueType::CustomProperty => {
+                // Check for custom property format (--var)
+                if value.starts_with("--")
+                    || (value.starts_with('(')
+                        && value.ends_with(')')
+                        && value[1..value.len() - 1].starts_with("--"))
+                {
+                    return true;
+                }
+            }
+            ValueType::ArbitraryValue => {
+                // Check for arbitrary value format [value]
+                if (value.starts_with('[') && value.ends_with(']'))
+                    || (value.starts_with('(') && value.ends_with(')'))
+                {
+                    return true;
+                }
+            }
+            ValueType::Length => {
+                // Check common length values
+                if ["px", "auto", "full", "screen"].contains(&value) || value.parse::<f64>().is_ok()
+                {
+                    return true;
+                }
+            }
+            ValueType::Scale => {
+                // Check common scale values
+                if [
+                    "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl",
+                    "9xl", "none",
+                ]
+                .contains(&value)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
-/// Check if a variant is a responsive variant
-fn is_responsive_variant(variant: &str) -> bool {
-    matches!(variant, "sm:" | "md:" | "lg:" | "xl:" | "2xl:")
-}
-
-/// Check if a class is likely a Tailwind utility class
+/// Determine if a class is a valid Tailwind utility
 pub fn is_tailwind_class(class: &str) -> bool {
-    // Apply rejection rules first for early exit
+    // Special cases
+    if class == "..." || class == "…" || class == "container" || class == "group" || class == "peer"
+    {
+        return true;
+    }
+
+    // Apply rejection rules first
     if should_reject_candidate(class) {
         return false;
     }
 
-    // Special cases first
-    if class == "..." || class == "…" || class == "container" {
-        return true;
+    // Handle variants (hover:, sm:, etc.) FIRST - MOVED UP!
+    if is_variant(class) {
+        let (_, base) = split_variant(class);
+        return is_tailwind_class(base);
     }
 
-    // Common Tailwind classes without hyphens
-    if is_standalone_utility(class) {
-        return true;
+    // Handle negative classes
+    if class.starts_with('-') && !class.starts_with("--") {
+        return is_tailwind_class(&class[1..]);
     }
 
-    // Classes with variants
-    if class.contains(':') {
-        return true;
+    // Check for arbitrary values with prefixes (like bg-[red]) - MOVED DOWN!
+    if is_arbitrary_class(class) {
+        // If it's an arbitrary class like [color:red], check for a valid property
+        if class.starts_with('[') || class.starts_with('(') {
+            // This is a completely arbitrary property+value
+            return true;
+        }
+
+        // For prefixed arbitrary values like bg-[red], check if the prefix is valid
+        for marker in &["[", "("] {
+            if let Some(idx) = class.find(marker) {
+                let prefix = &class[0..idx];
+
+                // Class needs a non-empty prefix
+                if prefix.is_empty() {
+                    return false;
+                }
+
+                // Check if this prefix matches any Tailwind prefix
+                return get_tailwind_prefixes()
+                    .iter()
+                    .any(|p| !p.is_standalone && prefix.starts_with(p.prefix));
+            }
+        }
+
+        return false;
     }
 
-    // Arbitrary values or arbitrary properties
-    if class.starts_with('[') && class.ends_with(']') {
-        return true;
-    }
-
-    // Arbitrary values with square brackets ([])
-    if class.contains('[') && class.contains(']') {
-        return true;
-    }
-
-    // Custom properties with parentheses (Tailwind v4 syntax)
-    if class.contains('(') && class.contains(')') {
-        return true;
-    }
-
-    // Negative values (like -mt-2, -z-10)
-    if class.starts_with('-') && class.len() > 1 {
-        // Skip the '-' prefix and check if the rest is a valid pattern
-        if let Some(dash_pos) = class[1..].find('-') {
-            let prefix = format!("{}-", &class[1..=1 + dash_pos]);
-            let value = &class[1 + dash_pos + 1..];
-            return is_valid_prefix(&prefix) && is_valid_value_for_prefix(&prefix, value);
+    // Find matching prefix
+    if let Some(prefix) = find_matching_prefix(class) {
+        if prefix.is_standalone {
+            // For standalone prefixes like "flex", the class name should exactly match
+            return class == prefix.prefix;
+        } else {
+            // For prefixed utilities like "px-4", extract the value part and check if it's valid
+            let value_part = &class[prefix.prefix.len()..];
+            return is_valid_value_for_prefix(prefix, value_part);
         }
     }
 
-    is_tailwind_pattern(class)
+    false
 }
 
-/// Quick rejection rules based on Tailwind's Oxide engine
+/// Rejection rules for classes that definitely aren't Tailwind utilities
 fn should_reject_candidate(class: &str) -> bool {
     // Empty class is invalid
     if class.is_empty() {
@@ -1075,19 +1015,19 @@ fn should_reject_candidate(class: &str) -> bool {
         return true;
     }
 
-    // Reject candidates that are single camelCase words, e.g.: `useEffect`
+    // Reject candidates that are single camelCase words
     if class.chars().all(|c| c.is_ascii_alphanumeric())
         && class.chars().any(|c| c.is_ascii_uppercase())
     {
         return true;
     }
 
-    // Reject candidates that look like SVG path data, e.g.: `m32.368 m7.5`
+    // Reject candidates that look like SVG path data
     if !class.contains('-') && !class.contains(':') && class.contains('.') {
         return true;
     }
 
-    // Reject candidates that look like version constraints or email addresses, e.g.: `next@latest`, `bob@example.com`
+    // Reject candidates that look like version constraints or email addresses
     if class
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '@')
@@ -1101,17 +1041,17 @@ fn should_reject_candidate(class: &str) -> bool {
         return true;
     }
 
-    // Reject candidates that look like short markdown links, e.g.: `[https://example.com]`
+    // Reject candidates that look like markdown links
     if class.starts_with("[http://") || class.starts_with("[https://") {
         return true;
     }
 
-    // Reject candidates that look like imports with path aliases, e.g.: `@/components/button`
+    // Reject candidates that look like imports with path aliases
     if class.len() > 1 && class.starts_with('@') && class.chars().nth(1) == Some('/') {
         return true;
     }
 
-    // Reject candidates that look like paths, e.g.: `app/assets/stylesheets`
+    // Reject candidates that look like paths
     if !class.contains(':') && !class.contains('[') {
         let slash_count = class.chars().filter(|&c| c == '/').count();
         if slash_count > 1 {
@@ -1122,1400 +1062,423 @@ fn should_reject_candidate(class: &str) -> bool {
     false
 }
 
-/// Check if a class is a standalone Tailwind utility (no values needed)
-fn is_standalone_utility(class: &str) -> bool {
-    let utilities = STANDALONE_UTILITIES.get_or_init(|| {
-        let utilities = [
-            // Layout
-            "block",
-            "inline-block",
-            "inline",
-            "flex",
-            "inline-flex",
-            "table",
-            "grid",
-            "contents",
-            "hidden",
-            "flow-root",
-            "inline-grid",
-            "table-caption",
-            "table-cell",
-            "table-column",
-            "table-column-group",
-            "table-footer-group",
-            "table-header-group",
-            "table-row-group",
-            "table-row",
-            "list-item",
-            // Display
-            "sr-only",
-            "not-sr-only",
-            // Positioning
-            "static",
-            "fixed",
-            "absolute",
-            "relative",
-            "sticky",
-            // Float
-            "float-left",
-            "float-right",
-            "float-none",
-            "float-start",
-            "float-end",
-            // Clear
-            "clear-left",
-            "clear-right",
-            "clear-both",
-            "clear-none",
-            "clear-start",
-            "clear-end",
-            // Visibility
-            "visible",
-            "invisible",
-            "collapse",
-            // Layout & Box Model
-            "box-border",
-            "box-content",
-            "backface-visible",
-            "backface-hidden",
-            // Flexbox
-            "flex-row",
-            "flex-row-reverse",
-            "flex-col",
-            "flex-col-reverse",
-            "flex-wrap",
-            "flex-wrap-reverse",
-            "flex-nowrap",
-            "flex-auto",
-            "flex-initial",
-            "flex-none",
-            "grow",
-            "shrink",
-            // Alignment
-            "items-start",
-            "items-end",
-            "items-center",
-            "items-baseline",
-            "items-stretch",
-            "justify-start",
-            "justify-end",
-            "justify-center",
-            "justify-between",
-            "justify-around",
-            "justify-evenly",
-            "justify-stretch",
-            "justify-baseline",
-            "justify-normal",
-            "justify-items-start",
-            "justify-items-end",
-            "justify-items-center",
-            "justify-items-stretch",
-            "justify-items-normal",
-            "justify-self-auto",
-            "justify-self-start",
-            "justify-self-end",
-            "justify-self-center",
-            "justify-self-stretch",
-            "content-normal",
-            "content-center",
-            "content-start",
-            "content-end",
-            "content-between",
-            "content-around",
-            "content-evenly",
-            "content-baseline",
-            "content-stretch",
-            "self-auto",
-            "self-start",
-            "self-end",
-            "self-center",
-            "self-stretch",
-            "self-baseline",
-            "place-content-center",
-            "place-content-start",
-            "place-content-end",
-            "place-content-between",
-            "place-content-around",
-            "place-content-evenly",
-            "place-content-baseline",
-            "place-content-stretch",
-            "place-items-start",
-            "place-items-end",
-            "place-items-center",
-            "place-items-baseline",
-            "place-items-stretch",
-            "place-self-auto",
-            "place-self-start",
-            "place-self-end",
-            "place-self-center",
-            "place-self-stretch",
-            // Grid
-            "grid-flow-row",
-            "grid-flow-col",
-            "grid-flow-dense",
-            "grid-flow-row-dense",
-            "grid-flow-col-dense",
-            "grid-cols-none",
-            "grid-cols-subgrid",
-            "grid-rows-none",
-            "grid-rows-subgrid",
-            "col-auto",
-            "row-auto",
-            "col-span-full",
-            "row-span-full",
-            // Spacing
-            "space-x-reverse",
-            "space-y-reverse",
-            // Borders
-            "border",
-            "border-x",
-            "border-y",
-            "border-s",
-            "border-e",
-            "border-t",
-            "border-r",
-            "border-b",
-            "border-l",
-            "border-solid",
-            "border-dashed",
-            "border-dotted",
-            "border-double",
-            "border-hidden",
-            "border-none",
-            "divide-solid",
-            "divide-dashed",
-            "divide-dotted",
-            "divide-double",
-            "divide-hidden",
-            "divide-none",
-            "divide-x-reverse",
-            "divide-y-reverse",
-            "border-collapse",
-            "border-separate",
-            "rounded",
-            "rounded-none",
-            "rounded-full",
-            // Outline
-            "outline-none",
-            "outline-hidden",
-            "outline-solid",
-            "outline-dashed",
-            "outline-dotted",
-            "outline-double",
-            // Effects
-            "shadow",
-            "shadow-none",
-            // Transitions
-            "transition",
-            "transition-all",
-            "transition-colors",
-            "transition-opacity",
-            "transition-shadow",
-            "transition-transform",
-            "transition-none",
-            "transition-normal",
-            "transition-discrete",
-            // Typography
-            "italic",
-            "not-italic",
-            "font-thin",
-            "font-extralight",
-            "font-light",
-            "font-normal",
-            "font-medium",
-            "font-semibold",
-            "font-bold",
-            "font-extrabold",
-            "font-black",
-            "font-sans",
-            "font-serif",
-            "font-mono",
-            "normal-nums",
-            "ordinal",
-            "slashed-zero",
-            "lining-nums",
-            "oldstyle-nums",
-            "proportional-nums",
-            "tabular-nums",
-            "diagonal-fractions",
-            "stacked-fractions",
-            "underline",
-            "overline",
-            "line-through",
-            "no-underline",
-            "decoration-solid",
-            "decoration-double",
-            "decoration-dotted",
-            "decoration-dashed",
-            "decoration-wavy",
-            "decoration-from-font",
-            "decoration-auto",
-            "uppercase",
-            "lowercase",
-            "capitalize",
-            "normal-case",
-            "truncate",
-            "text-ellipsis",
-            "text-clip",
-            "text-left",
-            "text-center",
-            "text-right",
-            "text-justify",
-            "text-start",
-            "text-end",
-            "antialiased",
-            "subpixel-antialiased",
-            "text-wrap",
-            "text-nowrap",
-            "text-balance",
-            "text-pretty",
-            "break-normal",
-            "break-words",
-            "break-all",
-            "break-keep",
-            "hyphens-none",
-            "hyphens-manual",
-            "hyphens-auto",
-            "whitespace-normal",
-            "whitespace-nowrap",
-            "whitespace-pre",
-            "whitespace-pre-line",
-            "whitespace-pre-wrap",
-            "whitespace-break-spaces",
-            // Inputs and Forms
-            "appearance-none",
-            "appearance-auto",
-            "cursor-auto",
-            "cursor-default",
-            "cursor-pointer",
-            "cursor-wait",
-            "cursor-text",
-            "cursor-move",
-            "cursor-help",
-            "cursor-not-allowed",
-            "cursor-none",
-            "cursor-context-menu",
-            "cursor-progress",
-            "cursor-cell",
-            "cursor-crosshair",
-            "cursor-vertical-text",
-            "cursor-alias",
-            "cursor-copy",
-            "cursor-no-drop",
-            "cursor-grab",
-            "cursor-grabbing",
-            "cursor-all-scroll",
-            "cursor-col-resize",
-            "cursor-row-resize",
-            "cursor-n-resize",
-            "cursor-e-resize",
-            "cursor-s-resize",
-            "cursor-w-resize",
-            "cursor-ne-resize",
-            "cursor-nw-resize",
-            "cursor-se-resize",
-            "cursor-sw-resize",
-            "cursor-ew-resize",
-            "cursor-ns-resize",
-            "cursor-nesw-resize",
-            "cursor-nwse-resize",
-            "cursor-zoom-in",
-            "cursor-zoom-out",
-            "select-none",
-            "select-text",
-            "select-all",
-            "select-auto",
-            "resize-none",
-            "resize",
-            "resize-y",
-            "resize-x",
-            // Object fit & position
-            "object-contain",
-            "object-cover",
-            "object-fill",
-            "object-none",
-            "object-scale-down",
-            "object-bottom",
-            "object-center",
-            "object-left",
-            "object-left-bottom",
-            "object-left-top",
-            "object-right",
-            "object-right-bottom",
-            "object-right-top",
-            "object-top",
-            // SVG and Graphics
-            "fill-current",
-            "stroke-current",
-            // Touch Actions
-            "touch-auto",
-            "touch-none",
-            "touch-pan-x",
-            "touch-pan-left",
-            "touch-pan-right",
-            "touch-pan-y",
-            "touch-pan-up",
-            "touch-pan-down",
-            "touch-pinch-zoom",
-            "touch-manipulation",
-            // Tables
-            "table-auto",
-            "table-fixed",
-            "caption-top",
-            "caption-bottom",
-            // Scroll
-            "scroll-auto",
-            "scroll-smooth",
-            "snap-start",
-            "snap-end",
-            "snap-center",
-            "snap-align-none",
-            "snap-normal",
-            "snap-always",
-            "snap-none",
-            "snap-x",
-            "snap-y",
-            "snap-both",
-            "snap-mandatory",
-            "snap-proximity",
-            // 3D Transforms
-            "transform-3d",
-            "transform-flat",
-            "transform-none",
-            "transform-gpu",
-            "transform-cpu",
-            // Force Color Adjust
-            "forced-color-adjust-auto",
-            "forced-color-adjust-none",
-            // Color Scheme
-            "scheme-normal",
-            "scheme-dark",
-            "scheme-light",
-            "scheme-light-dark",
-            "scheme-only-dark",
-            "scheme-only-light",
-            // Isolation
-            "isolate",
-            "isolation-auto",
-            // Will Change
-            "will-change-auto",
-            "will-change-scroll",
-            "will-change-contents",
-            "will-change-transform",
-            // Fieldset Sizing
-            "field-sizing-fixed",
-            "field-sizing-content",
-            // Box Decoration
-            "box-decoration-slice",
-            "box-decoration-clone",
-            // Other useful ones
-            "group",
-            "peer",
-            "container",
-            "animate-none",
-            "filter-none",
-            "backdrop-filter-none",
-        ];
-        HashSet::from_iter(utilities.iter().copied())
-    });
-
-    utilities.contains(class)
-}
-
-/// Check if a string follows a valid Tailwind utility pattern
-fn is_tailwind_pattern(class: &str) -> bool {
-    // Extract the prefix and value parts (if any)
-    if let Some(idx) = class.find('-') {
-        let (prefix, value) = class.split_at(idx + 1); // Include the '-' with prefix
-
-        // Check if the prefix is valid
-        if !is_valid_prefix(prefix) {
-            return false;
-        }
-
-        // Check if the value is valid for this prefix
-        return is_valid_value_for_prefix(prefix, value);
-    }
-
-    false
-}
-
-fn is_valid_prefix(prefix: &str) -> bool {
-    let prefixes = VALID_PREFIXES.get_or_init(|| {
-        let prefixes = [
-            // Position and layout
-            "inset-",
-            "-inset-",
-            "inset-x-",
-            "-inset-x-",
-            "inset-y-",
-            "-inset-y-",
-            "inset-s-",
-            "-inset-s-",
-            "inset-e-",
-            "-inset-e-",
-            "top-",
-            "-top-",
-            "right-",
-            "-right-",
-            "bottom-",
-            "-bottom-",
-            "left-",
-            "-left-",
-            "start-",
-            "-start-",
-            "end-",
-            "-end-",
-            "z-",
-            "-z-",
-            "order-",
-            "-order-",
-            "col-",
-            "-col-",
-            "row-",
-            "-row-",
-            "col-span-",
-            "row-span-",
-            "col-start-",
-            "-col-start-",
-            "col-end-",
-            "-col-end-",
-            "row-start-",
-            "-row-start-",
-            "row-end-",
-            "-row-end-",
-            "float-",
-            "clear-",
-            // Spacing
-            "m-",
-            "-m-",
-            "mx-",
-            "-mx-",
-            "my-",
-            "-my-",
-            "mt-",
-            "-mt-",
-            "mr-",
-            "-mr-",
-            "mb-",
-            "-mb-",
-            "ml-",
-            "-ml-",
-            "ms-",
-            "-ms-",
-            "me-",
-            "-me-",
-            "p-",
-            "-p-",
-            "px-",
-            "-px-",
-            "py-",
-            "-py-",
-            "pt-",
-            "-pt-",
-            "pr-",
-            "-pr-",
-            "pb-",
-            "-pb-",
-            "pl-",
-            "-pl-",
-            "ps-",
-            "-ps-",
-            "pe-",
-            "-pe-",
-            "space-x-",
-            "-space-x-",
-            "space-y-",
-            "-space-y-",
-            "indent-",
-            "-indent-",
-            // Sizing
-            "w-",
-            "min-w-",
-            "max-w-",
-            "h-",
-            "min-h-",
-            "max-h-",
-            "size-",
-            // Typography
-            "font-",
-            "text-",
-            "tracking-",
-            "leading-",
-            "list-",
-            "list-image-",
-            "align-",
-            "line-clamp-",
-            "decoration-",
-            "underline-offset-",
-            "-underline-offset-",
-            // Backgrounds
-            "bg-",
-            "from-",
-            "via-",
-            "to-",
-            // Border
-            "border-",
-            "border-x-",
-            "border-y-",
-            "border-t-",
-            "border-r-",
-            "border-b-",
-            "border-l-",
-            "border-s-",
-            "border-e-",
-            "divide-",
-            "divide-x-",
-            "divide-y-",
-            "outline-",
-            "outline-offset-",
-            "-outline-offset-",
-            "ring-",
-            "ring-offset-",
-            // Border radius
-            "rounded-",
-            "rounded-t-",
-            "rounded-r-",
-            "rounded-b-",
-            "rounded-l-",
-            "rounded-tl-",
-            "rounded-tr-",
-            "rounded-br-",
-            "rounded-bl-",
-            "rounded-ss-",
-            "rounded-se-",
-            "rounded-ee-",
-            "rounded-es-",
-            "rounded-s-",
-            "rounded-e-",
-            // Flexbox and Grid
-            "flex-",
-            "basis-",
-            "grow-",
-            "shrink-",
-            "grid-",
-            "grid-cols-",
-            "grid-rows-",
-            "grid-flow-",
-            "auto-cols-",
-            "auto-rows-",
-            "gap-",
-            "gap-x-",
-            "gap-y-",
-            "justify-",
-            "content-",
-            "items-",
-            "self-",
-            "place-",
-            // Effects
-            "shadow-",
-            "inset-shadow-",
-            "opacity-",
-            "mix-blend-",
-            "bg-blend-",
-            // Filters
-            "blur-",
-            "brightness-",
-            "contrast-",
-            "drop-shadow-",
-            "grayscale-",
-            "hue-rotate-",
-            "-hue-rotate-",
-            "invert-",
-            "saturate-",
-            "sepia-",
-            "filter-",
-            "backdrop-blur-",
-            "backdrop-brightness-",
-            "backdrop-contrast-",
-            "backdrop-grayscale-",
-            "backdrop-hue-rotate-",
-            "-backdrop-hue-rotate-",
-            "backdrop-invert-",
-            "backdrop-opacity-",
-            "backdrop-saturate-",
-            "backdrop-sepia-",
-            "backdrop-filter-",
-            // SVG
-            "fill-",
-            "stroke-",
-            "stroke-width-",
-            // Transitions and animations
-            "transition-",
-            "duration-",
-            "ease-",
-            "delay-",
-            "animate-",
-            "transition-behavior-",
-            // Transform
-            "transform-",
-            "origin-",
-            "scale-",
-            "-scale-",
-            "scale-x-",
-            "-scale-x-",
-            "scale-y-",
-            "-scale-y-",
-            "scale-z-",
-            "-scale-z-",
-            "rotate-",
-            "-rotate-",
-            "rotate-x-",
-            "-rotate-x-",
-            "rotate-y-",
-            "-rotate-y-",
-            "rotate-z-",
-            "-rotate-z-",
-            "translate-",
-            "-translate-",
-            "translate-x-",
-            "-translate-x-",
-            "translate-y-",
-            "-translate-y-",
-            "translate-z-",
-            "-translate-z-",
-            "skew-",
-            "-skew-",
-            "skew-x-",
-            "-skew-x-",
-            "skew-y-",
-            "-skew-y-",
-            "perspective-",
-            "perspective-origin-",
-            // Scroll utilities
-            "scroll-m-",
-            "scroll-mx-",
-            "scroll-my-",
-            "scroll-mt-",
-            "scroll-mr-",
-            "scroll-mb-",
-            "scroll-ml-",
-            "scroll-ms-",
-            "scroll-me-",
-            "-scroll-m-",
-            "-scroll-mx-",
-            "-scroll-my-",
-            "-scroll-mt-",
-            "-scroll-mr-",
-            "-scroll-mb-",
-            "-scroll-ml-",
-            "-scroll-ms-",
-            "-scroll-me-",
-            "scroll-p-",
-            "scroll-px-",
-            "scroll-py-",
-            "scroll-pt-",
-            "scroll-pr-",
-            "scroll-pb-",
-            "scroll-pl-",
-            "scroll-ps-",
-            "scroll-pe-",
-            "-scroll-p-",
-            "-scroll-px-",
-            "-scroll-py-",
-            "-scroll-pt-",
-            "-scroll-pr-",
-            "-scroll-pb-",
-            "-scroll-pl-",
-            "-scroll-ps-",
-            "-scroll-pe-",
-            "scroll-snap-",
-            "snap-",
-            // Table utilities
-            "table-",
-            "caption-",
-            "border-collapse-",
-            "border-spacing-",
-            "border-spacing-x-",
-            "border-spacing-y-",
-            // Misc utilities
-            "accent-",
-            "caret-",
-            "cursor-",
-            "object-",
-            "object-position-",
-            "will-change-",
-            "aspect-",
-            "columns-",
-            "container-type-",
-            "field-sizing-",
-            "box-decoration-",
-            "box-sizing-",
-            "forced-color-adjust-",
-            // Color scheme
-            "scheme-",
-            "color-scheme-",
-            // Other style utilities
-            "font-variant-",
-            "font-stretch-",
-            "font-smoothing-",
-            "backface-",
-            // Break utilities
-            "break-before-",
-            "break-inside-",
-            "break-after-",
-            // New in Tailwind v4 or recently added
-            "text-wrap-",
-            "text-decoration-",
-            "text-underline-",
-            "-webkit-font-smoothing-",
-            // Prefixes ending without hyphen (standalone utilities)
-            "pointer-events-",
-            "visibility-",
-            "touch-",
-            "appearance-",
-            "overflow-",
-            "overscroll-",
-            "whitespace-",
-            "break-",
-            "hyphens-",
-            "resize-",
-            "user-select-",
-        ];
-        HashSet::from_iter(prefixes.iter().copied())
-    });
-
-    prefixes.contains(prefix)
-}
-
-fn is_valid_value_for_prefix(prefix: &str, value: &str) -> bool {
-    // Special case for color utilities
-    if [
-        "bg-",
-        "text-",
-        "border-",
-        "border-t-",
-        "border-r-",
-        "border-b-",
-        "border-l-",
-        "border-x-",
-        "border-y-",
-        "border-s-",
-        "border-e-",
-        "ring-",
-        "divide-",
-        "fill-",
-        "stroke-",
-        "outline-",
-        "accent-",
-        "caret-",
-        "shadow-",
-        "inset-shadow-",
-        "from-",
-        "to-",
-        "via-",
-        "decoration-",
-    ]
-    .contains(&prefix)
-        && is_valid_color_value(value)
-    {
-        return true;
-    }
-
-    // Check for numeric values (including those with decimals)
-    if value.parse::<f64>().is_ok() {
-        // Position and layout utilities that take numeric values
-        if [
-            "inset-",
-            "top-",
-            "right-",
-            "bottom-",
-            "left-",
-            "inset-x-",
-            "inset-y-",
-            "inset-s-",
-            "inset-e-",
-            "start-",
-            "end-",
-            "z-",
-            "order-",
-            "-inset-",
-            "-top-",
-            "-right-",
-            "-bottom-",
-            "-left-",
-            "-inset-x-",
-            "-inset-y-",
-            "-inset-s-",
-            "-inset-e-",
-            "-start-",
-            "-end-",
-            "-z-",
-            "-order-",
-        ]
-        .contains(&prefix)
-        {
-            return true;
-        }
-
-        // Spacing utilities that take numeric values
-        if [
-            "m-",
-            "mx-",
-            "my-",
-            "mt-",
-            "mr-",
-            "mb-",
-            "ml-",
-            "ms-",
-            "me-",
-            "-m-",
-            "-mx-",
-            "-my-",
-            "-mt-",
-            "-mr-",
-            "-mb-",
-            "-ml-",
-            "-ms-",
-            "-me-",
-            "p-",
-            "px-",
-            "py-",
-            "pt-",
-            "pr-",
-            "pb-",
-            "pl-",
-            "ps-",
-            "pe-",
-            "gap-",
-            "gap-x-",
-            "gap-y-",
-            "space-x-",
-            "space-y-",
-            "-space-x-",
-            "-space-y-",
-            "indent-",
-            "-indent-",
-        ]
-        .contains(&prefix)
-        {
-            return true;
-        }
-
-        // Scroll utilities that take numeric values
-        if [
-            "scroll-m-",
-            "scroll-mx-",
-            "scroll-my-",
-            "scroll-mt-",
-            "scroll-mr-",
-            "scroll-mb-",
-            "scroll-ml-",
-            "scroll-ms-",
-            "scroll-me-",
-            "-scroll-m-",
-            "-scroll-mx-",
-            "-scroll-my-",
-            "-scroll-mt-",
-            "-scroll-mr-",
-            "-scroll-mb-",
-            "-scroll-ml-",
-            "-scroll-ms-",
-            "-scroll-me-",
-            "scroll-p-",
-            "scroll-px-",
-            "scroll-py-",
-            "scroll-pt-",
-            "scroll-pr-",
-            "scroll-pb-",
-            "scroll-pl-",
-            "scroll-ps-",
-            "scroll-pe-",
-            "-scroll-p-",
-            "-scroll-px-",
-            "-scroll-py-",
-            "-scroll-pt-",
-            "-scroll-pr-",
-            "-scroll-pb-",
-            "-scroll-pl-",
-            "-scroll-ps-",
-            "-scroll-pe-",
-        ]
-        .contains(&prefix)
-        {
-            return true;
-        }
-
-        // Sizing utilities that take numeric values
-        if ["w-", "h-", "min-w-", "min-h-", "max-w-", "max-h-", "size-"].contains(&prefix) {
-            return true;
-        }
-
-        // Border utilities that take numeric values
-        if [
-            "border-",
-            "border-x-",
-            "border-y-",
-            "border-s-",
-            "border-e-",
-            "border-t-",
-            "border-r-",
-            "border-b-",
-            "border-l-",
-            "rounded-",
-            "rounded-t-",
-            "rounded-r-",
-            "rounded-b-",
-            "rounded-l-",
-            "rounded-tl-",
-            "rounded-tr-",
-            "rounded-br-",
-            "rounded-bl-",
-            "rounded-ss-",
-            "rounded-se-",
-            "rounded-ee-",
-            "rounded-es-",
-            "outline-",
-            "outline-offset-",
-            "-outline-offset-",
-            "ring-",
-            "ring-offset-",
-            "divide-x-",
-            "divide-y-",
-        ]
-        .contains(&prefix)
-        {
-            return true;
-        }
-
-        // Transformation utilities
-        if [
-            "scale-",
-            "-scale-",
-            "scale-x-",
-            "-scale-x-",
-            "scale-y-",
-            "-scale-y-",
-            "scale-z-",
-            "-scale-z-",
-            "rotate-",
-            "-rotate-",
-            "rotate-x-",
-            "-rotate-x-",
-            "rotate-y-",
-            "-rotate-y-",
-            "rotate-z-",
-            "-rotate-z-",
-            "translate-",
-            "-translate-",
-            "translate-x-",
-            "-translate-x-",
-            "translate-y-",
-            "-translate-y-",
-            "translate-z-",
-            "-translate-z-",
-            "skew-",
-            "-skew-",
-            "skew-x-",
-            "-skew-x-",
-            "skew-y-",
-            "-skew-y-",
-        ]
-        .contains(&prefix)
-        {
-            return true;
-        }
-
-        // Other utilities that take numeric values
-        if [
-            "opacity-",
-            "backdrop-opacity-",
-            "brightness-",
-            "backdrop-brightness-",
-            "contrast-",
-            "backdrop-contrast-",
-            "saturate-",
-            "backdrop-saturate-",
-            "grayscale-",
-            "backdrop-grayscale-",
-            "invert-",
-            "backdrop-invert-",
-            "sepia-",
-            "backdrop-sepia-",
-            "hue-rotate-",
-            "-hue-rotate-",
-            "backdrop-hue-rotate-",
-            "-backdrop-hue-rotate-",
-            "blur-",
-            "backdrop-blur-",
-            "drop-shadow-",
-            "duration-",
-            "delay-",
-            "flex-",
-            "grow-",
-            "shrink-",
-            "basis-",
-            "cols-",
-            "grid-cols-",
-            "rows-",
-            "grid-rows-",
-            "stroke-",
-            "underline-offset-",
-            "-underline-offset-",
-            "line-clamp-",
-            "text-",
-            "columns-",
-            "border-spacing-",
-            "border-spacing-x-",
-            "border-spacing-y-",
-        ]
-        .contains(&prefix)
-        {
-            return true;
-        }
-
-        return true;
-    }
-
-    // Check for fraction values (like 1/2, 2/3)
-    if value.contains('/') {
-        let parts: Vec<&str> = value.split('/').collect();
-        if parts.len() == 2 && parts[0].parse::<f64>().is_ok() && parts[1].parse::<f64>().is_ok() {
-            return true;
-        }
-    }
-
-    // Arbitrary values and custom properties
-    if (value.starts_with('[') && value.ends_with(']'))
-        || (value.starts_with('(') && value.ends_with(')'))
-    {
-        return true;
-    }
-
-    // Common values for many utilities
-    let common_values = [
-        "auto", "full", "screen", "px", "none", "dvh", "dvw", "lvh", "lvw", "svh", "svw", "min",
-        "max", "fit",
-    ];
-    if common_values.contains(&value) {
-        return true;
-    }
-
-    // Container breakpoints and sizing
-    if ["w-", "max-w-", "min-w-", "columns-", "basis-"].contains(&prefix)
-        && [
-            "3xs", "2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
-            "prose",
-        ]
-        .contains(&value)
-    {
-        return true;
-    }
-
-    // Prefix-specific non-numeric values
-    match prefix {
-        "rounded-" | "rounded-t-" | "rounded-r-" | "rounded-b-" | "rounded-l-" | "rounded-tl-"
-        | "rounded-tr-" | "rounded-br-" | "rounded-bl-" | "rounded-ss-" | "rounded-se-"
-        | "rounded-ee-" | "rounded-es-" => {
-            ["sm", "md", "lg", "xl", "2xl", "3xl", "full"].contains(&value)
-        }
-        "shadow-" | "inset-shadow-" => ["sm", "md", "lg", "xl", "2xl", "inner"].contains(&value),
-        "drop-shadow-" => ["xs", "sm", "md", "lg", "xl", "2xl"].contains(&value),
-        "blur-" | "backdrop-blur-" => ["xs", "sm", "md", "lg", "xl", "2xl", "3xl"].contains(&value),
-        "font-" => [
-            "thin",
-            "extralight",
-            "light",
-            "normal",
-            "medium",
-            "semibold",
-            "bold",
-            "extrabold",
-            "black",
-            "sans",
-            "serif",
-            "mono",
-        ]
-        .contains(&value),
-        "text-" => {
-            [
-                "xs", "sm", "base", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl",
-                "9xl",
-            ]
-            .contains(&value)
-                || is_valid_color_value(value)
-        }
-        "tracking-" => ["tighter", "tight", "normal", "wide", "wider", "widest"].contains(&value),
-        "leading-" => ["none", "tight", "snug", "normal", "relaxed", "loose"].contains(&value),
-        "ease-" => ["linear", "in", "out", "in-out", "initial"].contains(&value),
-        "object-" => [
-            "contain",
-            "cover",
-            "fill",
-            "none",
-            "scale-down",
-            "top",
-            "bottom",
-            "center",
-            "left",
-            "left-bottom",
-            "left-top",
-            "right",
-            "right-bottom",
-            "right-top",
-        ]
-        .contains(&value),
-        "aspect-" => ["auto", "square", "video"].contains(&value),
-        "line-clamp-" => ["none"].contains(&value),
-        "z-" | "-z-" => ["auto"].contains(&value),
-        "perspective-" => {
-            ["dramatic", "near", "normal", "midrange", "distant", "none"].contains(&value)
-        }
-        "perspective-origin-" => [
-            "center",
-            "top",
-            "top-right",
-            "right",
-            "bottom-right",
-            "bottom",
-            "bottom-left",
-            "left",
-            "top-left",
-        ]
-        .contains(&value),
-        "transition-" => {
-            ["none", "all", "colors", "opacity", "shadow", "transform"].contains(&value)
-        }
-        "transition-behavior-" => ["normal", "discrete"].contains(&value),
-        "scheme-" => [
-            "normal",
-            "dark",
-            "light",
-            "light-dark",
-            "only-dark",
-            "only-light",
-        ]
-        .contains(&value),
-        "field-sizing-" => ["fixed", "content"].contains(&value),
-        "box-decoration-" => ["slice", "clone"].contains(&value),
-        // Wildcard matching for common patterns
-        _ if prefix.starts_with("outline-")
-            || prefix.starts_with("shadow-")
-            || prefix.starts_with("ring-")
-            || prefix.starts_with("stroke-") =>
-        {
-            true
-        }
-        _ if prefix.starts_with("hue-rotate-") || prefix.starts_with("backdrop-hue-rotate-") => {
-            value.parse::<f64>().is_ok() || value.ends_with("deg")
-        }
-        _ if prefix.starts_with("col-") || prefix.starts_with("row-") => {
-            value.parse::<f64>().is_ok() || ["span", "auto", "start", "end"].contains(&value)
-        }
-        _ => false,
-    }
-}
-
-/// Check if a value is a valid Tailwind color value
-fn is_valid_color_value(value: &str) -> bool {
-    // Basic color names
-    if ["white", "black", "transparent", "current", "inherit"].contains(&value) {
-        return true;
-    }
-
-    // Handle arbitrary color values like `bg-[#f00]` or `text-[rgb(255,0,0)]`
-    if (value.starts_with('[') && value.ends_with(']'))
-        || (value.starts_with('(') && value.ends_with(')'))
-    {
-        return true;
-    }
-
-    // Check for color-number pattern (red-500, blue-200, etc.)
-    let parts: Vec<&str> = value.split('-').collect();
-    if parts.len() == 2 {
-        let color = parts[0];
-        let number = parts[1];
-
-        // Check if the color name is a valid Tailwind color
-        if [
-            "slate", "gray", "zinc", "neutral", "stone", "red", "orange", "amber", "yellow",
-            "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet",
-            "purple", "fuchsia", "pink", "rose",
-        ]
-        .contains(&color)
-        {
-            // Check if "number" is a valid number
-            return number.parse::<usize>().is_ok();
-        }
-    }
-
-    false
-}
-
-/// Remove duplicate classes, keeping only the last occurrence of each class
-/// Only removes duplicates of Tailwind classes, custom classes are preserved
-fn remove_duplicates<'a>(classes: &[&'a str]) -> Vec<&'a str> {
-    let mut seen_tailwind = HashSet::new();
-    let mut result = Vec::new();
-
-    // Process from end to beginning to find last occurrence first
-    for &class in classes.iter().rev() {
-        if is_tailwind_class(class) {
-            // For Tailwind classes, only add if not seen before
-            if seen_tailwind.insert(class) {
-                // Insert at beginning to maintain original order
-                result.insert(0, class);
-            }
-        } else {
-            // For custom classes, always add
-            result.insert(0, class);
-        }
-    }
-
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_blog_post_example() {
-        let input = "text-white px-4 sm:px-8 py-2 sm:py-3 bg-sky-700 hover:bg-sky-800";
-        let expected = "bg-sky-700 px-4 py-2 text-white hover:bg-sky-800 sm:px-8 sm:py-3";
-        assert_eq!(sort_classes(input), expected);
+    macro_rules! test {
+        (fn $name:ident() $body:block) => {
+            #[test]
+            fn $name() {
+                set_normalize_whitespace(true);
+                set_remove_duplicates(true);
+                $body;
+            }
+        };
     }
 
-    #[test]
-    fn test_position_utilities() {
-        let input = "py-2 px-4 my-2 mx-4 top-0 right-0 bottom-0 left-0 inset-0";
-        let expected = "inset-0 top-0 right-0 bottom-0 left-0 mx-4 my-2 px-4 py-2";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_blog_post_example() {
+            let input = "text-white px-4 sm:px-8 py-2 sm:py-3 bg-sky-700 hover:bg-sky-800";
+            let expected = "bg-sky-700 px-4 py-2 text-white hover:bg-sky-800 sm:px-8 sm:py-3";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_preserve_duplicates() {
-        // Override the global setting
-        set_remove_duplicates(false);
-
-        let input = "p-4 m-2 p-4 bg-blue-500 m-2";
-        let expected = "m-2 m-2 bg-blue-500 p-4 p-4";
-        assert_eq!(sort_classes(input), expected);
-
-        set_remove_duplicates(true);
+    test! {
+        fn test_position_utilities() {
+            let input = "py-2 px-4 my-2 mx-4 top-0 right-0 bottom-0 left-0 inset-0";
+            let expected = "inset-0 top-0 right-0 bottom-0 left-0 mx-4 my-2 px-4 py-2";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_container_with_utilities() {
-        let input = "p-4 container mx-auto md:w-1/2 bg-white";
-        let expected = "container mx-auto bg-white p-4 md:w-1/2";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_container_with_utilities() {
+            let input = "p-4 container mx-auto md:w-1/2 bg-white";
+            let expected = "container mx-auto bg-white p-4 md:w-1/2";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_padding_margin_order() {
-        let input = "pl-4 p-2 m-4 mb-8 mx-2 py-3";
-        let expected = "m-4 mx-2 mb-8 p-2 py-3 pl-4";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_padding_margin_order() {
+            let input = "pl-4 p-2 m-4 mb-8 mx-2 py-3";
+            let expected = "m-4 mx-2 mb-8 p-2 py-3 pl-4";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_disabled() {
-        let input = "disabled:opacity-50 disabled:pointer-events-none";
-        let expected = "disabled:pointer-events-none disabled:opacity-50";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_tailwind_custom_properties() {
+            let input = "bg-(--main-color) text-(--text-color) border-(--border-color) p-4 m-2";
+            let expected = "m-2 border-(--border-color) bg-(--main-color) p-4 text-(--text-color)";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_without_disabled() {
-        let input = "opacity-50 pointer-events-none";
-        let expected = "pointer-events-none opacity-50";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_custom_classes() {
+            let input = "custom-class p-4 another-custom bg-blue-500 text-white my-class";
+            let expected = "custom-class another-custom my-class bg-blue-500 p-4 text-white";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_ring_utilities() {
-        let input = "inline-flex items-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-1 pt-2 pb-4 px-4";
-        let expected = "inline-flex items-center rounded-md px-4 pt-2 pb-4 font-medium ring-offset-1 transition-colors focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_ascii_ellipsis() {
+            let input = "p-4 ... bg-blue-500";
+            let expected = "bg-blue-500 p-4 ...";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_tailwind_custom_properties() {
-        let input = "bg-(--main-color) text-(--text-color) border-(--border-color) p-4 m-2";
-        let expected = "m-2 border-(--border-color) bg-(--main-color) p-4 text-(--text-color)";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_unicode_ellipsis() {
+            let input = "p-4 … bg-blue-500";
+            let expected = "bg-blue-500 p-4 …";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_custom_classes() {
-        let input = "custom-class p-4 another-custom bg-blue-500 text-white my-class";
-        let expected = "custom-class another-custom my-class bg-blue-500 p-4 text-white";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_multiple_responsive_variants() {
+            let input = "flex md:grid lg:flex xl:grid 2xl:flex sm:block";
+            let expected = "flex sm:block md:grid lg:flex xl:grid 2xl:flex";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_ellipsis() {
-        let input = "p-4 ... bg-blue-500";
-        let expected = "bg-blue-500 p-4 ...";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_parasite_utilities() {
+            let input = "p-4 group peer flex";
+            let expected = "group peer flex p-4";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_multiple_responsive_variants() {
-        let input = "flex md:grid lg:flex xl:grid 2xl:flex sm:block";
-        let expected = "flex sm:block md:grid lg:flex xl:grid 2xl:flex";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_complex_variants() {
+            let input = "hover:opacity-75 focus:outline-none opacity-50 hover:scale-150 scale-125 sm:flex md:block lg:hidden sm:p-4 p-2 md:m-6";
+            let expected = "scale-125 p-2 opacity-50 hover:scale-150 hover:opacity-75 focus:outline-none sm:flex sm:p-4 md:m-6 md:block lg:hidden";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_parasite_utilities() {
-        let input = "p-4 group peer flex";
-        let expected = "group peer flex p-4";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_arbitrary_values() {
+            let input = "bg-[#ff0000] text-[16px] p-[10px] m-[5px]";
+            let expected = "m-[5px] bg-[#ff0000] p-[10px] text-[16px]";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_complex_variants() {
-        let input = "hover:opacity-75 focus:outline-none opacity-50 hover:scale-150 scale-125 sm:flex md:block lg:hidden sm:p-4 p-2 md:m-6";
-        let expected = "scale-125 p-2 opacity-50 hover:scale-150 hover:opacity-75 focus:outline-none sm:flex sm:p-4 md:m-6 md:block lg:hidden";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_variant_consistent_with_base() {
+            let input1 = "opacity-50 pointer-events-none";
+            let expected1 = "pointer-events-none opacity-50";
+
+            let input2 = "disabled:opacity-50 disabled:pointer-events-none";
+            let expected2 = "disabled:pointer-events-none disabled:opacity-50";
+
+            assert_eq!(sort_classes(input1), expected1);
+            assert_eq!(sort_classes(input2), expected2);
+        }
     }
 
-    #[test]
-    fn test_arbitrary_values() {
-        let input = "bg-[#ff0000] text-[16px] p-[10px] m-[5px]";
-        let expected = "m-[5px] bg-[#ff0000] p-[10px] text-[16px]";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_camel_case_arbitrary_properties() {
+            let input = "[backgroundColor:red] p-4 [marginTop:5px]";
+            let expected = "p-4 [backgroundColor:red] [marginTop:5px]";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_remove_duplicates() {
-        set_remove_duplicates(true);
-        let input = "p-4 m-2 p-4 bg-blue-500 m-2";
-        let expected = "m-2 bg-blue-500 p-4";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_transform_utilities() {
+            let input = "scale-110 rotate-45 translate-x-4 -translate-y-2 skew-x-12";
+            let expected = "translate-x-4 -translate-y-2 scale-110 rotate-45 skew-x-12";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_disabled_variant_sorting() {
-        let input = "disabled:opacity-50 disabled:pointer-events-none";
-        let expected = "disabled:pointer-events-none disabled:opacity-50";
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_negative_values() {
+            let input = "-translate-x-4 -mt-2 -mx-3 -mb-12";
+            let expected = "-mx-3 -mt-2 -mb-12 -translate-x-4";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_variant_consistent_with_base() {
-        let input1 = "opacity-50 pointer-events-none";
-        let expected1 = "pointer-events-none opacity-50";
-
-        let input2 = "disabled:opacity-50 disabled:pointer-events-none";
-        let expected2 = "disabled:pointer-events-none disabled:opacity-50";
-
-        assert_eq!(sort_classes(input1), expected1);
-        assert_eq!(sort_classes(input2), expected2);
+    test! {
+        fn test_arbitrary_properties() {
+            let input = "[color:red] [margin:10px] [transform:rotate(45deg)]";
+            let expected = "[margin:10px] [transform:rotate(45deg)] [color:red]";
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 
-    #[test]
-    fn test_remove_duplicates_tailwind_only() {
-        set_remove_duplicates(true);
+    test! {
+        fn test_mixed_arbitrary_and_standard() {
+            let input = "text-blue-500 [fontSize:14px] p-4 [padding-top:20px]";
+            let expected = "p-4 [padding-top:20px] text-blue-500 [fontSize:14px]";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
 
-        // Custom classes "my-class" and "custom" should be preserved, even if duplicated
-        let input = "p-4 my-class p-4 bg-blue-500 custom my-class custom";
+    test! {
+        fn test_complex_state_variants() {
+            let input = "active:bg-blue-700 hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300";
+            let expected = "hover:bg-blue-500 focus:ring-2 focus:ring-blue-300 focus:outline-none active:bg-blue-700";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
 
-        // Expected: duplicated p-4 removed, but duplicated custom classes remain
-        let expected = "my-class custom my-class custom bg-blue-500 p-4";
+    test! {
+        fn test_group_peer_variants() {
+            let input = "group-hover:bg-blue-400 peer-hover:bg-green-400 hover:bg-red-400";
+            let expected = "hover:bg-red-400 group-hover:bg-blue-400 peer-hover:bg-green-400";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
 
-        assert_eq!(sort_classes(input), expected);
+    test! {
+        fn test_nested_variants() {
+            let input = "sm:hover:bg-blue-500 hover:sm:bg-blue-500";
+            let expected = "hover:sm:bg-blue-500 sm:hover:bg-blue-500";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    test! {
+        fn test_empty_string() {
+            let input = "";
+            let expected = "";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    test! {
+        fn test_empty_spaces_only() {
+            let input = "   ";
+            let expected = " ";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    test! {
+        fn test_interpolation() {
+            let input = "bg-blue-500 {{ dynamicClass }} p-4";
+            let expected = "bg-blue-500 {{ dynamicClass }} p-4";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    test! {
+        fn test_stuff() {
+            let input = "text-sm hover:text-md m-[5px] hover:m-[10px] bg-white p-4";
+            let expected = "hover:text-md m-[5px] bg-white p-4 text-sm hover:m-[10px]";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+}
+
+#[cfg(test)]
+mod preserve_whitespace_tests {
+    use super::*;
+
+    macro_rules! preserve_whitespace_test {
+        (fn $name:ident() $body:block) => {
+            #[test]
+            fn $name() {
+                set_normalize_whitespace(false);
+                set_remove_duplicates(true);
+                $body;
+            }
+        };
+    }
+
+    preserve_whitespace_test! {
+        fn test_preserve_whitespace() {
+            let input = "  p-4    flex   mt-2  ";
+            let expected = "  mt-2    flex   p-4  ";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    preserve_whitespace_test! {
+        fn test_preserve_whitespace_different_spacing() {
+            let input = "  bg-blue-500     text-white   p-4  ";
+            let expected = "  bg-blue-500     p-4   text-white  ";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    preserve_whitespace_test! {
+        fn test_preserve_whitespace_leading_trailing() {
+            let input = "   flex      ";
+            let expected = "   flex      ";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    preserve_whitespace_test! {
+        fn test_preserve_whitespace_with_many_classes() {
+            let input = " p-2  m-4    bg-red-500  text-sm   hover:bg-red-600  sm:text-lg ";
+            let expected = " m-4  bg-red-500    p-2  text-sm   hover:bg-red-600  sm:text-lg ";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    preserve_whitespace_test! {
+        fn test_preserve_whitespace_complex_mixed() {
+            let input = "   flex    xl:block    lg:flex     md:hidden     ";
+            let expected = "   flex    md:hidden    lg:flex     xl:block     ";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    preserve_whitespace_test! {
+        fn test_preserve_whitespace_with_arbitrary_values() {
+            let input = "  p-[20px]   m-[10px]    bg-[#ff0000]  ";
+            let expected = "  m-[10px]   bg-[#ff0000]    p-[20px]  ";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    preserve_whitespace_test! {
+        fn test_preserve_whitespace_with_duplicates_removed() {
+            let input = "p-4   m-2     p-4  bg-blue-500 m-2   ";
+            let expected = "m-2     bg-blue-500  p-4   ";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+}
+
+#[cfg(test)]
+mod normalize_whitespace_tests {
+    use super::*;
+
+    macro_rules! normalize_whitespace_test {
+        (fn $name:ident() $body:block) => {
+            #[test]
+            fn $name() {
+                set_normalize_whitespace(true);
+                set_remove_duplicates(true);
+                $body;
+            }
+        };
+    }
+
+    normalize_whitespace_test! {
+        fn test_normalize_whitespace() {
+            let input = "  p-4    flex   mt-2  ";
+            let expected = "mt-2 flex p-4";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    normalize_whitespace_test! {
+        fn test_normalize_whitespace_different_spacing() {
+            let input = "  bg-blue-500     text-white   p-4  ";
+            let expected = "bg-blue-500 p-4 text-white";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    normalize_whitespace_test! {
+        fn test_normalize_whitespace_leading_trailing() {
+            let input = "   flex      ";
+            let expected = "flex";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    normalize_whitespace_test! {
+        fn test_normalize_whitespace_with_many_classes() {
+            let input = " p-2  m-4    bg-red-500  text-sm   hover:bg-red-600  sm:text-lg ";
+            let expected = "m-4 bg-red-500 p-2 text-sm hover:bg-red-600 sm:text-lg";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    normalize_whitespace_test! {
+        fn test_normalize_whitespace_complex_mixed() {
+            let input = "   flex    xl:block    lg:flex     md:hidden     ";
+            let expected = "flex md:hidden lg:flex xl:block";
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    normalize_whitespace_test! {
+        fn test_normalize_whitespace_with_arbitrary_values() {
+            let input = "  p-[20px]   m-[10px]    bg-[#ff0000]  ";
+            let expected = "m-[10px] bg-[#ff0000] p-[20px]";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+}
+
+#[cfg(test)]
+mod remove_duplicates_tests {
+    use super::*;
+
+    macro_rules! remove_duplicates_test {
+        (fn $name:ident() $body:block) => {
+            #[test]
+            fn $name() {
+                set_normalize_whitespace(true);
+                set_remove_duplicates(true);
+                $body;
+            }
+        };
+    }
+
+    remove_duplicates_test! {
+        fn test_remove_duplicates() {
+            let input = "p-4 m-2 p-4 bg-blue-500 m-2";
+            let expected = "m-2 bg-blue-500 p-4";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    remove_duplicates_test! {
+        fn test_remove_duplicates_with_custom_classes() {
+            let input = "p-4 my-class p-4 bg-blue-500 custom my-class custom";
+            let expected = "my-class custom my-class custom bg-blue-500 p-4";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    remove_duplicates_test! {
+        fn test_remove_duplicates_with_arbitrary_values() {
+            let input = "p-[20px] m-[10px] p-[20px] bg-[#ff0000] m-[10px]";
+            let expected = "m-[10px] bg-[#ff0000] p-[20px]";
+
+            assert_eq!(sort_classes(input), expected);
+        }
+    }
+
+    remove_duplicates_test! {
+        fn test_remove_duplicates_with_whitespace() {
+            let input = "  p-4    flex   mt-2  ";
+            let expected = "mt-2 flex p-4";
+
+            assert_eq!(sort_classes(input), expected);
+        }
     }
 }

@@ -108,6 +108,11 @@
           "type": "boolean",
           "default": true,
           "description": "Remove duplicate Tailwind classes, keeping only the last occurrence (only applies when using internal sorter)"
+        },
+        "tailwindSorter.internalSorter.normalizeWhitespace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Normalize whitespace between classes (only applies when using internal sorter)"
         }
       }
     }
