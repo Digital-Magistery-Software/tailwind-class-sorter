@@ -26,3 +26,17 @@ yarn-error.log
 yarn.lock
 biome.jsonc
 .yarnrc.yml
+
+# Rust and WebAssembly development files
+wasm/src/**
+wasm/target/**
+wasm/pkg/**
+wasm/Cargo.toml
+wasm/Cargo.lock
+**/*.rs
+Cargo.toml
+Cargo.lock
+**/.cargo/**
+**/target/**
+scripts/build-wasm.js
+**/*.d.ts
