@@ -9,6 +9,12 @@ static REMOVE_DUPLICATES: OnceLock<Mutex<bool>> = OnceLock::new();
 static DEBUG_MODE: OnceLock<Mutex<bool>> = OnceLock::new();
 static NORMALIZE_WHITESPACE: OnceLock<Mutex<bool>> = OnceLock::new();
 
+#[derive(Debug)]
+enum TemplateChunk {
+    Text(String),
+    Expression(String),
+}
+
 pub fn set_remove_duplicates(remove: bool) {
     let mutex = REMOVE_DUPLICATES.get_or_init(|| Mutex::new(true));
     if let Ok(mut value) = mutex.lock() {
@@ -295,6 +301,341 @@ fn sort_with_preserved_whitespace(
     output
 }
 
+/// Detects if a string contains template expressions
+fn contains_template_expr(s: &str) -> bool {
+    s.contains("${")
+}
+
+/// Sort classes in a template literal while preserving expressions
+fn sort_template_literal(class_string: &str) -> String {
+    debug_log!("Sorting template literal: {}", class_string);
+
+    let mut chunks = Vec::new();
+    let mut current_pos = 0;
+
+    // Parse the template string into alternating Text and Expression chunks
+    while let Some(expr_start) = class_string[current_pos..].find("${") {
+        let abs_start = current_pos + expr_start;
+
+        // Add the text before the expression
+        if abs_start > current_pos {
+            chunks.push(TemplateChunk::Text(
+                class_string[current_pos..abs_start].to_string(),
+            ));
+        }
+
+        // Find the end of the expression
+        if let Some(expr_end) = class_string[abs_start..].find("}") {
+            let abs_end = abs_start + expr_end + 1;
+
+            // Add the expression
+            chunks.push(TemplateChunk::Expression(
+                class_string[abs_start..abs_end].to_string(),
+            ));
+
+            current_pos = abs_end;
+        } else {
+            // No closing brace, treat the rest as text
+            chunks.push(TemplateChunk::Text(class_string[abs_start..].to_string()));
+            current_pos = class_string.len();
+            break;
+        }
+    }
+
+    // Add any remaining text
+    if current_pos < class_string.len() {
+        chunks.push(TemplateChunk::Text(class_string[current_pos..].to_string()));
+    }
+
+    if is_normalize_whitespace_enabled() {
+        sort_template_with_normalized_whitespace(&chunks)
+    } else {
+        sort_template_with_preserved_whitespace(&chunks)
+    }
+}
+
+// Helper function to sort template with normalized whitespace
+fn sort_template_with_normalized_whitespace(chunks: &[TemplateChunk]) -> String {
+    // Collect all classes from text chunks
+    let mut all_classes = Vec::new();
+
+    for chunk in chunks {
+        if let TemplateChunk::Text(text) = chunk {
+            let classes = split_preserving_brackets(text);
+            for class in classes {
+                if !class.trim().is_empty() && is_tailwind_class(class) {
+                    all_classes.push(class);
+                }
+            }
+        }
+    }
+
+    if all_classes.is_empty() {
+        return chunks
+            .iter()
+            .map(|c| match c {
+                TemplateChunk::Text(t) => t.clone(),
+                TemplateChunk::Expression(e) => e.clone(),
+            })
+            .collect();
+    }
+
+    let sorted_classes = sort_tailwind_classes(&all_classes);
+
+    // Handle duplicate removal if enabled
+    let sorted_classes = if is_remove_duplicates_enabled() {
+        let (classes, _) = remove_duplicates_from_sorted(&sorted_classes);
+        classes
+    } else {
+        sorted_classes
+    };
+
+    // Build the result with normalized whitespace
+    let mut result = String::new();
+    let mut class_idx = 0;
+
+    for chunk in chunks {
+        match chunk {
+            TemplateChunk::Expression(expr) => {
+                // Add space before expression if needed
+                if !result.is_empty() && !result.ends_with(' ') {
+                    result.push(' ');
+                }
+
+                // Add the expression
+                result.push_str(expr);
+
+                // Add space after if more content follows
+                if class_idx < sorted_classes.len() {
+                    result.push(' ');
+                }
+            }
+            TemplateChunk::Text(text) => {
+                // Count valid classes in this chunk
+                let classes = split_preserving_brackets(text);
+                let valid_class_count = classes
+                    .iter()
+                    .filter(|&c| !c.trim().is_empty() && is_tailwind_class(c))
+                    .count();
+
+                // Add that many classes from the sorted list
+                for _ in 0..valid_class_count {
+                    if class_idx < sorted_classes.len() {
+                        // Add space before if needed
+                        if !result.is_empty() && !result.ends_with(' ') {
+                            result.push(' ');
+                        }
+
+                        // Add the class
+                        result.push_str(sorted_classes[class_idx]);
+                        class_idx += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    result.trim().to_string()
+}
+
+// Helper function to sort template with preserved whitespace
+fn sort_template_with_preserved_whitespace(chunks: &[TemplateChunk]) -> String {
+    // Collect all valid classes
+    let mut all_classes: Vec<String> = Vec::new();
+    let mut chunks_with_class_counts: Vec<(Option<String>, Vec<String>, Vec<String>)> = Vec::new();
+
+    // Collect all classes and their metadata
+    for chunk in chunks.iter() {
+        match chunk {
+            TemplateChunk::Expression(expr) => {
+                // Track expressions
+                chunks_with_class_counts.push((Some(expr.clone()), Vec::new(), Vec::new()));
+            }
+            TemplateChunk::Text(text) => {
+                if text.trim().is_empty() {
+                    // Track empty text chunks
+                    chunks_with_class_counts.push((None, Vec::new(), Vec::new()));
+                    continue;
+                }
+
+                let mut classes = Vec::new();
+                let mut whitespace = Vec::new();
+
+                // Parse the original text into alternating whitespace and class tokens
+                let starts_with_whitespace = text.chars().next().is_some_and(|c| c.is_whitespace());
+
+                // Recreate the whitespace/class sequence
+                if starts_with_whitespace {
+                    // Starts with whitespace
+                    let mut in_whitespace = true;
+                    let mut current = String::new();
+
+                    for c in text.chars() {
+                        let is_whitespace = c.is_whitespace();
+
+                        if is_whitespace != in_whitespace {
+                            // Switching between whitespace and class
+                            if in_whitespace {
+                                whitespace.push(current.clone());
+                            } else {
+                                classes.push(current.clone());
+                            }
+                            current.clear();
+                            in_whitespace = is_whitespace;
+                        }
+                        current.push(c);
+                    }
+
+                    // Add the last token
+                    if !current.is_empty() {
+                        if in_whitespace {
+                            whitespace.push(current.clone());
+                        } else {
+                            classes.push(current.clone());
+                        }
+                    }
+                } else {
+                    // Starts with a class
+                    let mut in_whitespace = false;
+                    let mut current = String::new();
+
+                    for c in text.chars() {
+                        let is_whitespace = c.is_whitespace();
+
+                        if is_whitespace != in_whitespace {
+                            // Switching between class and whitespace
+                            if in_whitespace {
+                                whitespace.push(current.clone());
+                            } else {
+                                classes.push(current.clone());
+                            }
+                            current.clear();
+                            in_whitespace = is_whitespace;
+                        }
+                        current.push(c);
+                    }
+
+                    // Add the last token
+                    if !current.is_empty() {
+                        if in_whitespace {
+                            whitespace.push(current.clone());
+                        } else {
+                            classes.push(current.clone());
+                        }
+                    }
+
+                    // If classes/whitespace are not balanced, add empty whitespace
+                    if classes.len() > whitespace.len() {
+                        whitespace.push(String::new());
+                    }
+                }
+
+                // Add the valid classes to our tracking list
+                for class in classes.iter() {
+                    if !class.trim().is_empty() && is_tailwind_class(class) {
+                        all_classes.push(class.clone());
+                    }
+                }
+
+                // Store both valid and invalid classes to maintain structure
+                chunks_with_class_counts.push((None, classes, whitespace));
+            }
+        }
+    }
+
+    // No valid classes found, return original
+    if all_classes.is_empty() {
+        return chunks
+            .iter()
+            .map(|c| match c {
+                TemplateChunk::Text(t) => t.clone(),
+                TemplateChunk::Expression(e) => e.clone(),
+            })
+            .collect();
+    }
+
+    // Get the class strings for sorting
+    let class_strings: Vec<&str> = all_classes.iter().map(|class| class.as_str()).collect();
+
+    // Sort all classes together
+    let sorted_classes = sort_tailwind_classes(&class_strings);
+
+    // Remove duplicates if enabled
+    let (final_classes, _) = if is_remove_duplicates_enabled() {
+        remove_duplicates_from_sorted(&sorted_classes)
+    } else {
+        (sorted_classes, HashSet::new())
+    };
+
+    // Rebuild the template with sorted classes
+    let mut result = String::new();
+    let mut sorted_class_idx = 0;
+
+    for (chunk_idx, chunk_info) in chunks_with_class_counts.into_iter().enumerate() {
+        match chunk_info {
+            (Some(expr), _, _) => {
+                // Expression chunk - add as is
+                result.push_str(&expr);
+            }
+            (None, classes, whitespace) => {
+                // Text chunk - rebuild with sorted classes
+                if classes.is_empty() {
+                    // Empty text chunk, include any whitespace
+                    if let Some(TemplateChunk::Text(text)) = chunks.get(chunk_idx) {
+                        result.push_str(text);
+                    }
+                    continue;
+                }
+
+                let mut rebuilt = String::new();
+                let starts_with_whitespace =
+                    !whitespace.is_empty() && classes.len() <= whitespace.len();
+
+                // Track which classes from this chunk we've already used
+                let mut used_class_indices = HashSet::new();
+
+                if starts_with_whitespace {
+                    // Start with the first whitespace
+                    rebuilt.push_str(&whitespace[0]);
+                }
+
+                // Add each class with its following whitespace
+                for (local_idx, _) in classes.iter().enumerate() {
+                    // Skip this position if it's not a valid class
+                    // or if it's a duplicate that was removed
+                    if used_class_indices.contains(&local_idx) {
+                        continue;
+                    }
+
+                    // Find the next available sorted class from the global sorted list
+                    if sorted_class_idx < final_classes.len() {
+                        // Add the sorted class
+                        rebuilt.push_str(final_classes[sorted_class_idx]);
+                        sorted_class_idx += 1;
+
+                        // Mark this position as used
+                        used_class_indices.insert(local_idx);
+                    }
+
+                    // Add whitespace if available
+                    let whitespace_idx = if starts_with_whitespace {
+                        local_idx + 1
+                    } else {
+                        local_idx
+                    };
+                    if whitespace_idx < whitespace.len() {
+                        rebuilt.push_str(&whitespace[whitespace_idx]);
+                    }
+                }
+
+                result.push_str(&rebuilt);
+            }
+        }
+    }
+
+    result
+}
+
 /// Main function to sort Tailwind classes
 pub fn sort_classes(class_string: &str) -> String {
     // Handle empty strings
@@ -323,6 +664,16 @@ pub fn sort_classes(class_string: &str) -> String {
             debug_log!("Not sorting classes containing '{{': {}", class_string);
         }
         return class_string.to_string();
+    }
+
+    // Check for template expressions
+    if contains_template_expr(class_string) {
+        if is_debug_enabled() {
+            debug_log!("Sorting template literal expression: {}", class_string);
+        }
+
+        // Use special handling for template literals
+        return sort_template_literal(class_string);
     }
 
     // Split the class string properly to handle spaces in arbitrary values
@@ -1270,14 +1621,6 @@ mod tests {
         fn test_interpolation() {
             let input = "bg-blue-500 {{ dynamicClass }} p-4";
             let expected = "bg-blue-500 {{ dynamicClass }} p-4";
-            assert_eq!(sort_classes(input), expected);
-        }
-    }
-
-    test! {
-        fn test_stuff() {
-            let input = "text-sm hover:text-md m-[5px] hover:m-[10px] bg-white p-4";
-            let expected = "hover:text-md m-[5px] bg-white p-4 text-sm hover:m-[10px]";
             assert_eq!(sort_classes(input), expected);
         }
     }

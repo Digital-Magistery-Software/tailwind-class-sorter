@@ -146,7 +146,6 @@ suite("TailwindSorterFormatter - Internal Sorter", function () {
       assert.ok(edits, "Edits should exist");
       assert.strictEqual(edits.length, 1, "Should have one edit");
 
-      // Check for correctly sorted classes
       const expected = 'className="bg-sky-700 px-4 py-2 text-white hover:bg-sky-800 sm:px-8 sm:py-3"';
       assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
     });
@@ -161,7 +160,6 @@ suite("TailwindSorterFormatter - Internal Sorter", function () {
       assert.ok(edits, "Edits should exist");
       assert.strictEqual(edits.length, 1, "Should have one edit");
 
-      // Check for correctly sorted arbitrary values
       const expected = 'className="m-[5px] bg-[#123456] p-[10px] text-[16px]"';
       assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
     });
@@ -176,7 +174,6 @@ suite("TailwindSorterFormatter - Internal Sorter", function () {
       assert.ok(edits, "Edits should exist");
       assert.strictEqual(edits.length, 1, "Should have one edit");
 
-      // Check for correctly sorted custom properties
       const expected = 'className="bg-(--color) p-4 text-(--text)"';
       assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
     });
@@ -190,7 +187,6 @@ suite("TailwindSorterFormatter - Internal Sorter", function () {
 
       const edits = await formatter.formatDocument(document);
 
-      // Should not make changes to empty class strings
       assert.strictEqual(edits, undefined, "Should not format empty class strings");
     });
 
@@ -207,6 +203,162 @@ suite("TailwindSorterFormatter - Internal Sorter", function () {
       // Check for correctly sorted classes with ellipsis at the end
       const expected = 'className="bg-white p-4 ..."';
       assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
+    });
+  });
+
+  suite("Template Literal Handling", () => {
+    suite("Basic Template Literal Sorting", () => {
+      test("Should properly sort classes while preserving expression position", async () => {
+        await formatter.initialize();
+
+        const document = await createTempDocument(
+          "test.tsx",
+          "<div className={`mt-2 p-4 bg-white ${conditionalClass} flex items-center`}>Test</div>"
+        );
+
+        const edits = await formatter.formatDocument(document);
+
+        assert.ok(edits, "Edits should exist");
+        assert.strictEqual(edits.length, 1, "Should have one edit");
+
+        const expected = "className={`mt-2 flex items-center ${conditionalClass} bg-white p-4`}";
+        assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
+      });
+
+      test("Should handle multiple expressions in template literals", async () => {
+        await formatter.initialize();
+
+        const document = await createTempDocument(
+          "test.tsx",
+          "<div className={`mt-2 ${var1} p-4 bg-white ${var2} flex items-center ${var3}`}>Test</div>"
+        );
+
+        const edits = await formatter.formatDocument(document);
+
+        assert.ok(edits, "Edits should exist");
+        assert.strictEqual(edits.length, 1, "Should have one edit");
+
+        const expected = "className={`mt-2 ${var1} flex items-center ${var2} bg-white p-4 ${var3}`}";
+        assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
+      });
+    });
+
+    suite("Duplicate Handling in Template Literals", () => {
+      test("Should remove duplicates across template expressions", async () => {
+        await formatter.initialize();
+
+        // p-4 appears before and after the expression
+        const document = await createTempDocument(
+          "test.tsx",
+          "<div className={`mt-2 p-4 bg-white ${conditionalClass} flex items-center p-4`}>Test</div>"
+        );
+
+        const edits = await formatter.formatDocument(document);
+
+        assert.ok(edits, "Edits should exist");
+        assert.strictEqual(edits.length, 1, "Should have one edit");
+
+        // p-4 should only appear once in the sorted output
+        // NOTE: This does not follow the behavior of the official Prettier plugin, which does not remove duplicates seprated by expressions
+        const p4Count = (edits[0].newText.match(/p-4/g) || []).length;
+        assert.strictEqual(p4Count, 1, "p-4 should only appear once after duplicate removal");
+
+        const expected = "className={`mt-2 flex items-center ${conditionalClass} bg-white p-4`}";
+        assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
+      });
+
+      test("Should respect the removeDuplicateClasses setting", async () => {
+        formatter.config.internalSorter.removeDuplicateClasses = false;
+        await formatter.initialize();
+
+        // p-4 appears before and after the expression
+        const document = await createTempDocument(
+          "test.tsx",
+          "<div className={`mt-2 p-4 bg-white ${conditionalClass} flex items-center p-4`}>Test</div>"
+        );
+
+        const edits = await formatter.formatDocument(document);
+
+        assert.ok(edits, "Edits should exist");
+        assert.strictEqual(edits.length, 1, "Should have one edit");
+
+        const expected = "className={`mt-2 flex items-center ${conditionalClass} bg-white p-4 p-4`}";
+        assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
+      });
+    });
+
+    suite("Whitespace Handling in Template Literals", () => {
+      test("Should normalize whitespace when configured", async () => {
+        formatter.config.internalSorter.normalizeWhitespace = true;
+        await formatter.initialize();
+
+        const document = await createTempDocument(
+          "test.tsx",
+          "<div className={`  mt-2   p-4    ${conditionalClass}   flex   items-center  `}>Test</div>"
+        );
+
+        const edits = await formatter.formatDocument(document);
+
+        assert.ok(edits, "Edits should exist");
+        assert.strictEqual(edits.length, 1, "Should have one edit");
+
+        const expected = "className={`mt-2 flex ${conditionalClass} items-center p-4`}";
+        assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
+      });
+
+      test("Should preserve whitespace when configured", async () => {
+        formatter.config.internalSorter.normalizeWhitespace = false;
+        await formatter.initialize();
+
+        const document = await createTempDocument(
+          "test.tsx",
+          "<div className={`  mt-2   p-4    ${conditionalClass}   flex   items-center  `}>Test</div>"
+        );
+
+        const edits = await formatter.formatDocument(document);
+        console.log("edits", edits);
+
+        assert.ok(edits, "Edits should exist");
+        assert.strictEqual(edits.length, 1, "Should have one edit");
+
+        const expected = "className={`  mt-2   flex    ${conditionalClass}   items-center   p-4  `}";
+        assert.ok(edits[0].newText.includes(expected), `Expected formatted output to contain: ${expected}\nBut got: ${edits[0].newText}`);
+      });
+    });
+
+    suite("Edge Cases", () => {
+      test("Should handle template literal with no classes", async () => {
+        await formatter.initialize();
+
+        const document = await createTempDocument("test.tsx", "<div className={`${conditionalClass}`}>Test</div>");
+
+        const edits = await formatter.formatDocument(document);
+
+        // Should not make any changes as there are no classes to sort
+        assert.strictEqual(edits, undefined, "No changes should be made to template with no classes");
+      });
+
+      test("Should handle template literals with only expressions", async () => {
+        await formatter.initialize();
+
+        const document = await createTempDocument("test.tsx", "<div className={`${expr1}${expr2}${expr3}`}>Test</div>");
+
+        const edits = await formatter.formatDocument(document);
+
+        // Should not make any changes as there are no classes to sort
+        assert.strictEqual(edits, undefined, "No changes should be made to template with only expressions");
+      });
+
+      test("Should handle nested template literals", async () => {
+        await formatter.initialize();
+
+        const document = await createTempDocument("test.tsx", "<div className={`mt-2 p-4 ${`bg-white ${innerVar} flex`} items-center`}>Test</div>");
+
+        const edits = await formatter.formatDocument(document);
+
+        assert.ok(edits, "Edits should exist");
+        assert.strictEqual(edits.length, 1, "Should have one edit");
+      });
     });
   });
 });

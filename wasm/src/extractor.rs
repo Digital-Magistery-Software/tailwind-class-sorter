@@ -90,40 +90,56 @@ impl<'a> Visit<'a> for TailwindClassVisitor<'a> {
     }
 
     fn visit_template_literal(&mut self, template_lit: &TemplateLiteral<'a>) {
-        // Process each static part (quasi) of the template literal
-        for (i, quasi) in template_lit.quasis.iter().enumerate() {
-            // Only process if the cooked value is available
+        // Check if this template literal might contain Tailwind classes
+        let mut has_tailwind_classes = false;
+
+        for quasi in template_lit.quasis.iter() {
             if let Some(cooked) = &quasi.value.cooked {
                 let value = cooked.as_str();
-
-                if looks_like_class_string(value) {
-                    let start = quasi.span.start as usize;
-                    let end = quasi.span.end as usize;
-
-                    // Extract the actual text from the document
-                    let original_text = if start < self.document.len() && end <= self.document.len()
-                    {
-                        self.document[start..end].to_string()
-                    } else {
-                        value.to_string()
-                    };
-
-                    // Add to our collection of matches
-                    self.class_matches.push(ClassMatch {
-                        start,
-                        end,
-                        original: original_text,
-                        class_string: value.to_string(),
-                        path: format!("template_literal_quasi[{}]", i),
-                    });
-
-                    console_log!("Found Tailwind classes in template literal: {}", value);
+                if value.split_whitespace().any(is_tailwind_class) {
+                    has_tailwind_classes = true;
+                    break;
                 }
             }
         }
 
-        // Explicitly visit each expression in the template literal
-        // This is so we find string literals inside template expressions
+        if has_tailwind_classes {
+            // This template might contain Tailwind classes
+            let start = template_lit.span.start as usize;
+            let end = template_lit.span.end as usize;
+
+            // Extract the actual text from the document
+            let original_text = if start < self.document.len() && end <= self.document.len() {
+                self.document[start..end].to_string()
+            } else {
+                // Fallback if bounds are invalid
+                "".to_string()
+            };
+
+            // Only process if we could extract the text and it contains backticks
+            if !original_text.is_empty()
+                && (original_text.starts_with('`') && original_text.ends_with('`'))
+            {
+                // Extract the content inside the backticks
+                let inner_content = &original_text[1..original_text.len() - 1];
+
+                // Add as special template class match
+                self.class_matches.push(ClassMatch {
+                    start,
+                    end,
+                    original: original_text.clone(),
+                    class_string: inner_content.to_string(), // The content inside backticks
+                    path: "template_literal_for_sorter".to_string(),
+                });
+
+                console_log!(
+                    "Found Tailwind classes in template literal: {}",
+                    inner_content
+                );
+            }
+        }
+
+        // Visit expressions to find nested literals
         for expr in &template_lit.expressions {
             self.visit_expression(expr);
         }

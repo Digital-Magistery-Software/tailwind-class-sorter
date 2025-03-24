@@ -97,7 +97,8 @@ export class TailwindSorterFormatter implements vscode.Disposable {
     if (
       this.config.internalSorter.enabled &&
       (oldConfig.internalSorter.removeDuplicateClasses !== this.config.internalSorter.removeDuplicateClasses ||
-        oldConfig.internalSorter.debug !== this.config.internalSorter.debug)
+        oldConfig.internalSorter.debug !== this.config.internalSorter.debug ||
+        oldConfig.internalSorter.normalizeWhitespace !== this.config.internalSorter.normalizeWhitespace)
     ) {
       configureWasmSorter(this.config, this.logger);
     }
