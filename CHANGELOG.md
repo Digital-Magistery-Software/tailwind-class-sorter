@@ -1,5 +1,18 @@
 # Change Log
 
+## [1.3.1] - 2025-03-24
+
+### Fixed
+
+- Template literal handling: Classes across template expressions (`${variables}`) are now properly sorted as one group, while preserving expression positions
+- Duplicate Tailwind classes are now correctly removed across template expressions
+- Whitespace around template expressions is now handled correctly based on configuration
+- Improved template literal detection in JS/TS/JSX/TSX files
+
+### Changed
+
+- Template literal handling now differs from the official Tailwind Prettier plugin - our approach sorts all classes as a unified set for more consistent ordering
+
 ## [1.3.0] - 2025-03-16
 
 ### Added
